@@ -1,0 +1,69 @@
+
+AIMS:
+1. maximum function capacity:
+- test gem indexing bypass
+- define largest fasta + fastq chunk (both paired end and single end)
+
+2. maximum total data
+- use large paired-end data as input
+
+3. cost effectiveness
+- log parsing for automated pipeline cost generation
+
+4. validation
+- compare performance and results with local run
+
+TASKS
+1. bioinformatics 
+- change index correction from fasta to fastq sets
+- add paired end mpileup
+- fix mpileup output to allow conversion to sinple (single-end)
+- validate correct mpileup construction
+- implement hash table
+
+2. pipeline architecture
+- live log parsing (ensure that lines for graphics output are always printed to terminal)
+- test gem-index bypass
+- add debug option that adds/removes print statements
+- fix fastq.gz parsing from s3 (Damian's version)
+- add checks to ensure that final output is correct
+
+3. pipeline deployment
+- dockerfile for local / VM run of pipeline
+- create multiple runtimes and manually set the storage used. name the storage in the runtime name (storage 2500, 5000, 7500, 10000) - work out which one to use for different inputs
+
+
+mid/long-term
+- provision gem indexing automatically by deploying appropriate VMs
+- test pipeline automation as done by Damian. 
+
+
+LOGGING
+- go over / rationalise print statements
+- add debug option to eliminate most print statements
+- find live log solution that retains all data (useful for graphs + stats downstream)
+- parse log to create cost estimate for every run
+- integrate lithops plots into pipeline plots (i.e. graph names etc.)
+
+DOCKERFILE
+
+
+
+
+invoice for June in July. 
+
+defined period of time (short) - cloud credits for research - apply anyway, might take a few months. 
+
+credits available through not for profit 6-12 months (facilitate credits for first few months) - discussion with 
+
+set up a call about requirements. 
+
+
+
+
+
+to do:
+plan tests
+core bioinformatics
+run 10 Gb fastq pipeline on HPC. 
+compare results. 

@@ -1,0 +1,6 @@
+venv
+*.map
+*.fastq
+data_preparation
+plots
+_build
