@@ -1,0 +1,2 @@
+lithops[aws]
+aiobotocore==2.3.2
