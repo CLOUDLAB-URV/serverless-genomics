@@ -1,0 +1,40 @@
+lithops:
+    backend: aws_lambda
+    storage: aws_s3
+    storage_bucket: <BUCKET>
+    #mode: serverless
+    #monitoring: storage
+    #data_cleaner: <True/False>
+    workers: 10000
+    data_limit: False  # in MiB
+    #execution_timeout: 1800
+    #include_modules: <LIST_OF_MODULES>
+    #exclude_modules: <LIST_OF_MODULES>
+    #log_level: INFO
+    #log_format: "%(asctime)s [%(levelname)s] %(name)s -- %(message)s"
+    #log_stream: ext://sys.stdout
+    #log_filename <path_to_a_file>
+
+serverless:
+    backend: aws_lambda
+    runtime : <RUNTIME>
+    #runtime_timeout: 600
+    #runtime_memory: 256
+    #remote_invoker: <True/False>
+
+redis:
+    host:  <ec2-XX-XX-XX-XX.compute-1.amazonaws.com>
+    port: 6379
+    password: <REDIS_PASSWORD>
+
+aws:
+    access_key_id:  XXXXXXXXXXXXXXXXXXXXXXXX
+    secret_access_key: XXXXXXXXXXXXXXXXXXXXXXXXXXXx
+aws_s3:
+    storage_bucket: <BUCKET>
+    region_name: <e.g., us-east-1>
+    endpoint : <e.g., https://s3.us-east-1.amazonaws.com>
+aws_lambda:
+    execution_role: arn:aws:iam::XXXXXXXXXXXXX:role/lithops-role
+    region_name: <e.g., us-east-1>
+    runtime_timeout: 900

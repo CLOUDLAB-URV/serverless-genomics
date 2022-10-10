@@ -1,0 +1,26 @@
+#!/usr/bin/env -S gawk -f 
+
+# Map components
+# E e fastq chunk
+# F f fasta chunk
+# G g gem indexer
+# H h gem mapper
+# I i redis
+# L l map correction
+# M m gempileup
+# N n conversion to csv and writing to s3
+
+# Reduce components
+# columns: R|r|S|s   fasta_chunk    mpileup_range   (fastq_chunk) 
+# R r retrieve mpileups
+# S s merge mpileups - snp calling
+{
+    if      ($0~/Variant Caller -/)  { print }
+    else if ($0~/starting pipeline at/)  { print }
+    else if ($0~/number of fasta chunks/)  { print }
+    else if ($0~/number of fastq chunks/)  { print }
+    else if ($0~/number of iterdata elements/)  { print }
+    else if ($0~/^[E-N|e-n]{1}\s{1}/) { print }
+    else if ($0~/^[R-S|r-s]{1}\s{1}/) { print }
+
+}
