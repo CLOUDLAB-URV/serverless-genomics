@@ -6,14 +6,10 @@ import time
 from lithops import Storage
 import boto3
 import lithops
-import lithopsgenetics
 import lithopsgenetics.auxiliaryfunctions as af
-import math
-import ec2_control.aws_ec2_control as ec2
 from PriceEstimator import PriceEstimator
 from botocore.client import Config
 import subprocess as sp
-import os
 
 
 class MapReduce:
@@ -245,11 +241,28 @@ class MapReduce:
         
         return {"PartNumber" : n_part, "ETag" : part["ETag"], "mpu_id": mpu_id}
 
+
     def delete_objects(self, storage, bucket, file_format):
         keys = storage.list_keys(bucket=bucket, prefix=file_format+"/")
         storage.delete_objects(bucket=bucket, key_list=keys)
 
-    def __init__(self, map_func, map_func2, reduce_func, create_sinple_key, runtime, runtime_memory, runtime_memory_r, buffer_size, file_format, func_timeout_map, func_timeout_reduce,log_level, bucket, stage, id, debug, skip_map, EC2_IP, workers, method, PEM, fastq_set_n, run_id, iterdata_n, redis_index_correction, num_chunks, fq_seqname):
+
+    def index_correction_map(id, setname, bucket, storage):  
+        filelist = storage.list_keys(bucket, "map_index_files/"+setname)
+        for file in filelist:
+            local_file = file.split("/")[-1]
+            storage.download_file(bucket, file, '/tmp/'+local_file)
+        
+        cmd = f'/function/bin/binary_reducer.sh /function/bin/merge_gem_alignment_metrics.sh 4 /tmp/{setname}* > /tmp/{setname}.intermediate.txt'
+        result1 = sp.run(cmd, shell=True, check=True, universal_newlines=True)
+        cmd2 = f'/function/bin/filter_merged_index.sh /tmp/{setname}.intermediate.txt /tmp/{setname}'
+        result2 = sp.run(cmd2, shell=True, check=True, universal_newlines=True)
+        
+        storage.upload_file('/tmp/'+setname+'.txt', bucket, 'correctedIndex/'+setname+'.txt')
+        return 0
+    
+    
+    def __init__(self, map_func, map_func2, reduce_func, create_sinple_key, runtime, runtime_memory, runtime_memory_r, buffer_size, file_format, func_timeout_map, func_timeout_reduce,log_level, bucket, stage, id, debug, skip_map, workers, method, fastq_set_n, run_id, iterdata_n, num_chunks, fq_seqname):
         self.map_func = map_func
         self.map_func2 = map_func2
         self.reduce_func = reduce_func
@@ -268,30 +281,14 @@ class MapReduce:
         self.debug = debug
         self.skip_map = skip_map
         self.method = method
-        self.EC2_IP = EC2_IP
         self.workers = workers
-        self.PEM = PEM
         self.fastq_set_n = fastq_set_n
         self.run_id = run_id
         self.iterdata_n = iterdata_n
-        self.redis_index_correction = redis_index_correction
         self.num_chunks = num_chunks
         self.fq_seqname = fq_seqname
     
-    def index_correction_map(id, setname, bucket, storage):  
-        filelist = storage.list_keys(bucket, "map_index_files/"+setname)
-        for file in filelist:
-            local_file = file.split("/")[-1]
-            storage.download_file(bucket, file, '/tmp/'+local_file)
-        
-        cmd = f'/function/bin/binary_reducer.sh /function/bin/merge_gem_alignment_metrics.sh 4 /tmp/{setname}* > /tmp/{setname}.intermediate.txt'
-        result1 = sp.run(cmd, shell=True, check=True, universal_newlines=True)
-        cmd2 = f'/function/bin/filter_merged_index.sh /tmp/{setname}.intermediate.txt /tmp/{setname}'
-        result2 = sp.run(cmd2, shell=True, check=True, universal_newlines=True)
-        
-        storage.upload_file('/tmp/'+setname+'.txt', bucket, 'correctedIndex/'+setname+'.txt')
-        
-        return 0
+    
     
 
     def __call__(self, iterdata, iterdata_sets):
@@ -300,7 +297,7 @@ class MapReduce:
         s3 = storage.storage_handler.s3_client
 
         # log_level=self.log_level
-        fexec = lithops.FunctionExecutor(log_level=self.log_level, runtime=self.runtime)
+        fexec = lithops.FunctionExecutor(log_level=self.log_level, runtime=self.runtime, runtime_memory=self.runtime_memory)
 
         if self.skip_map == "False":
             print("Deleting previous mapper outputs...")
@@ -348,16 +345,11 @@ class MapReduce:
                 # Results
                 map_results = fexec.get_result()
                 fexec.plot()
-                if self.redis_index_correction==True:
-                    ec2.flush_redis_database(path_to_secret_key=self.PEM,ec2_IP_address=self.EC2_IP,redis_password='lucio-redis-server')
-                time.sleep(5)
             else:
                 print("map phase - iterdata with "+str(len(iterdata_sets))+" sets")
                 count=0
                 for iterdata in iterdata_sets:
                     count+=1
-                    if self.redis_index_correction==True:
-                        ec2.start_redis_reducer(path_to_secret_key=self.PEM,ec2_IP_address=self.EC2_IP, fastq_set_n=self.fastq_set_n, run_id=self.run_id, iterdata_map_n=self.fastq_set_n)
                     #print("map phase - iterdata set no. "+str(count)+" with "+str(len(iterdata))+" elements")
                     #print("\nprinting iterdata")
                     #print(str(iterdata))
@@ -373,14 +365,20 @@ class MapReduce:
                     for el in map_results_part:
                         map_results.append(el)
                     
-                    if self.redis_index_correction==True:
-                        print("flushing redis database after iterdata set no. "+str(count))
-                        ec2.flush_redis_database(path_to_secret_key=self.PEM, ec2_IP_address=self.EC2_IP,redis_password='lucio-redis-server')
-                        time.sleep(5)
-                        print("finished flushing redis database after iterdata set no. "+str(count))
         else:
             print("skipping map phase and retrieving existing keys")
             map_results = storage.list_keys(self.bucket, prefix="csv/")
+            
+        #Delete intermediate files
+        keys = storage.list_keys(self.bucket, "map_index_files/")
+        for key in keys:
+            storage.delete_object(self.bucket, key)
+        keys = storage.list_keys(self.bucket, "correctedIndex/")
+        for key in keys:
+            storage.delete_object(self.bucket, key)
+        keys = storage.list_keys(self.bucket, "filtered_map_files/")
+        for key in keys:
+            storage.delete_object(self.bucket, key)
 
         end = time.time()
         map_time = end - start

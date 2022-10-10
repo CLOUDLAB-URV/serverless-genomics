@@ -1,5 +1,3 @@
-
-import chunk
 import re
 import lithops
 import argparse
@@ -31,10 +29,6 @@ worker_chunk_size = int(args.chunk_size)
 ovlp = int(args.overlap)
 fasta_folder = args.fasta_folder
 runtime = args.runtime
-
-
-
-
 
 class PartitionFasta():
 

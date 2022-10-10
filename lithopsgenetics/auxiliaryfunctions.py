@@ -133,7 +133,6 @@ def parse_optional_arg(arg_opt1, arg_opt2, text2_opt1=None, text2_opt2=None):
         return(out1)
 
 
-
 #Temporal function to test.
 # Function to read information of the chunks from a file, without byteranges.
 def read_chunks_info_random(data):
