@@ -272,8 +272,8 @@ class MapReduce:
         self.runtime_memory_r = runtime_memory_r
         self.buffer_size = buffer_size
         self.file_format = file_format
-        self.func_timeout_map = func_timeout_map
-        self.func_timeout_reduce = func_timeout_reduce
+        self.func_timeout_map = int(func_timeout_map)
+        self.func_timeout_reduce = int(func_timeout_reduce)
         self.log_level = log_level
         self.bucket = bucket
         self.stage = stage
@@ -314,7 +314,7 @@ class MapReduce:
                 print("map phase - single iterdata set")
                 
                 # Start first part of map
-                fexec.map(self.map_func, iterdata, timeout=2400)
+                fexec.map(self.map_func, iterdata, timeout=self.func_timeout_map)
                 first_map_results = fexec.get_result()
                 
                 # Generate index correction iterdata
@@ -323,7 +323,7 @@ class MapReduce:
                     index_iterdata.append({'setname': self.fq_seqname+'_fq'+str(i+1), 'bucket': str(self.bucket)})
                 
                 # Index correction
-                fexec.map(self.index_correction_map, index_iterdata)
+                fexec.map(self.index_correction_map, index_iterdata, timeout=self.func_timeout_map)
                 corrections_results = fexec.get_result()
                 
                 # Generate new iterdata
@@ -340,7 +340,7 @@ class MapReduce:
                     })
                 
                 # Execute second part of map
-                fexec.map(self.map_func2, newiterdata, timeout=2400)
+                fexec.map(self.map_func2, newiterdata, timeout=self.func_timeout_map)
                 
                 # Results
                 map_results = fexec.get_result()
@@ -350,12 +350,6 @@ class MapReduce:
                 count=0
                 for iterdata in iterdata_sets:
                     count+=1
-                    #print("map phase - iterdata set no. "+str(count)+" with "+str(len(iterdata))+" elements")
-                    #print("\nprinting iterdata")
-                    #print(str(iterdata))
-                    #print("\nprinting iterdata elements")
-                    #for el in iterdata:
-                        #print(el)
                     fexec.map(self.map_func, iterdata, timeout=2400)
                     print("map phase - finished iterdata set no. "+str(count)+" with "+str(len(iterdata))+" elements")
                     print("getting results")
@@ -373,13 +367,14 @@ class MapReduce:
         keys = storage.list_keys(self.bucket, "map_index_files/")
         for key in keys:
             storage.delete_object(self.bucket, key)
-        keys = storage.list_keys(self.bucket, "correctedIndex/")
-        for key in keys:
-            storage.delete_object(self.bucket, key)
+        #keys = storage.list_keys(self.bucket, "correctedIndex/")
+        #for key in keys:
+        #    storage.delete_object(self.bucket, key)
         keys = storage.list_keys(self.bucket, "filtered_map_files/")
         for key in keys:
             storage.delete_object(self.bucket, key)
 
+        #End of map
         end = time.time()
         map_time = end - start
         print(f'{stage}:{id}: map phase: execution_time: {map_time}: s')
@@ -390,8 +385,6 @@ class MapReduce:
         print("Map Phase Finished...")
 
         return map_time, 0, 0, 0 # Skip reduce for testing purposes
-
-        #print("\nmap results\n"+str(map_results))
 
         #--------------------------------------------------------------------------
         # REDUCE STAGE 1

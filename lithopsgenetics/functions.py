@@ -238,9 +238,9 @@ def generate_alignment_iterdata(list_fastq, list_fasta, iterdata_n):
             iterdata.append({'fasta_chunk': fasta_key, 'fastq_chunk': fastq_key})
 
         #Only N chunks for testing purposes
-        if counter >= (num_chunks - 1):
-            break
-        counter += 1
+        #if counter >= (num_chunks - 1):
+        #    break
+        #counter += 1
 
     if iterdata_n is not None:
         print("iterdata subset elements to be parsed: " + str(iterdata_n))
