@@ -225,34 +225,28 @@ def generate_alignment_iterdata(list_fastq, list_fasta, iterdata_n):
     """
     Creates the lithops iterdata from the fasta and fastq chunk lists
     """
-
     os.chdir(CWD)
-
-    counter = 0
-    num_chunks = 2
-
     iterdata = []
+    
+    # Number of fastq chunks processed. If doing a partial execution, iterdata_n will need to be multiple of the number of fasta chunks
+    # so the index correction is done properly.
+    num_chunks = 0  
+    
+    # Generate iterdata
     for fastq_key in list_fastq:
+        num_chunks += 1
         for fasta_key in list_fasta:
-            #print(fastq_key)
             iterdata.append({'fasta_chunk': fasta_key, 'fastq_chunk': fastq_key})
 
-        #Only N chunks for testing purposes
-        #if counter >= (num_chunks - 1):
-        #    break
-        #counter += 1
-
-    if iterdata_n is not None:
-        print("iterdata subset elements to be parsed: " + str(iterdata_n))
+    # Limit the length of iterdata if iterdata_n is not null.
+    if iterdata_n is not None: 
         iterdata = iterdata[0:int(iterdata_n)]
-        print("returning first" + str(iterdata_n) + " elements")
-        print("end of *create_iterdata_from_info_files* function - single end sequencing")
-        return iterdata, num_chunks
-    else:
-        print("returning all iterdata elements")
-        #print(str(iterdata))
-        print("end of *create_iterdata_from_info_files* function - single end sequencing")
-        return iterdata, num_chunks
+        if(len(iterdata)%len(list_fasta)!=0):
+            raise Exception("Hola")
+        else: 
+            num_chunks = len(iterdata)//len(list_fasta)
+
+    return iterdata, num_chunks
 
 def prepare_fastq(cloud_adr, BUCKET_NAME, idx_folder, fastq_folder, fastq_chunk_size, seq_type, fastq_file, seq_name,datasource,num_spots, fastq_file2=None):
     print("Creating fastq index files if they are not present")
