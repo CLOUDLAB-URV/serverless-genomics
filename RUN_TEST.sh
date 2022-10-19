@@ -1,1 +1,0 @@
-python varcall_lithops_demo_v8.py -fq SRR935389 -fa TriTrypDB-9.0_TbruceiTREU927_Genome_MbChr.fasta -cl minio -b genomicsdata -fb genomicsdata -nfq 500000 -nfa 1000000 -ds SRA -ofa 300 -t 0 -ff csv -s3w False -rt arnaugabriel/genomicsruntime:0.8 -rtm 2048 -rtr 4096 -bs 75% -ftm 2400 -ftr 2400 -sk False -itn 54
