@@ -1,64 +1,16 @@
-"""
-Cloudbutton Genomics Use case - Variant Caller Demo - processing fastq and
-fasta inputs into chunks for map function to align all fastq x fasta combinations
-using the gem3 mapper.
-Reduce function merges mpileup and calls SNPs using SiNPle
-
-Folder structure:
-In bucket, create two folders:
-1. fastqgz/  (for fastqgz file(s))
-2. fasta/ (for fasta reference)
-
-The program will then generate the following folders
-3. fasta-chunks/ (for split fasta files)
-4. fastq-indexes/ (for fastq index files)
-5. outputs/ (pipeline output files - variant calling output from SiNPle)
-
-USAGE:
-Preliminary steps:
-    1. upload the fastq.gz file(s) into BUCKET_NAME/fastqgz
-    2. Upload the fasta file into BUCKET_NAME/fasta
-
-command line examples
-
-# 1. s3 commandline
-# 1a. single-end test (to be updated)
-python varcall_lithops_demo_v4.py -fq1 SRR6052133_1.fastq.gz -fa TriTrypDB-9.0_TbruceiTREU927_Genome_MbChr.fasta -b cloudbutton-variant-caller-input -nrfq 100000 -ncfa 270000 -itn 10 -rt lumimar/hutton-genomics-v04 -rtm 2048 > varcall_se.log
-# 2a. paired end test (to be updated)
-python varcall_lithops_demo_v4.py -fq1 SRR6052133_1.fastq.gz -fq2 SRR6052133_2.fastq.gz -fa TriTrypDB-9.0_TbruceiTREU927_Genome_MbChr.fasta -b cloudbutton-variant-caller-input -nrfq 400000 -ncfa 270000 -itn 10 -rt lumimar/hutton-genomics-v04 -rtm 2048 > varcall_pe.log
-# 2. SRA commandline
-python varcall_lithops_demo_v4.py -fq1 SRR6052133_1.fastq.gz -fq2 SRR6052133_2.fastq.gz -fa TriTrypDB-9.0_TbruceiTREU927_Genome_MbChr.fasta -b cloudbutton-variant-caller-input -nfq 100000 -nfa 270000 -itn 10 -ds SRA -fq SRR6052133 -rl 76 -rt lumimar/hutton-genomics-v03:12 -rtm 2048
-
-TO DO:
-Necessary
-- correct coordinates for each chunk.
-- modify the iterdata to include the total number of chunks for each fastq file
-
-Optional
-- parallelise fastq.gz indexing (using a map-reduce iteration before the main map-reduce)
-"""
-
-###################################################################
-#### PACKAGES
-###################################################################
-# generic packages
 import argparse
 import os.path
 import time
 import re
 import sys
 from random import randint
-
-# lithops functions and packages
-from map_reduce_executor import MapReduce
-
-# demo functions and packages
 import lithopsgenetics
 import lithopsgenetics.auxiliaryfunctions as af
 import Metadata
 
-# map/reduce functions
-from map_reduce_functions import MapReduceFunctions
+# map/reduce functions and executor
+from map_reduce_executor import MapReduce
+from map_functions import MapFunctions
 
 ###################################################################
 #### PIPELINE SETTINGS
@@ -278,35 +230,6 @@ if __name__ == "__main__":
     iterdata_n=len(iterdata)
     fastq_set_n=len(fasta_list) # number of fastq files aligned to each fasta chunk.
     
-    # Split iterdata if number higher than concurrent functions
-    iterdata_sets=[]
-    iterdata_set=[]
-    if iterdata_n > concur_fun:
-        print("number of concurrent functions smaller than overall iterdata")
-        count=0
-        count_tot=0
-        for el in iterdata:
-            count+=1
-            count_tot+=1
-            fastq_count=el["fastq_chunk"][1]["number"]
-            if ((count+fastq_set_n)>concur_fun and fastq_count==1):
-                print("starting new iterdata set")
-                print("count total: \t"+str(count_tot)+"\tcount: "+str(count)+"\tfastq_count "+str(fastq_count))
-                print("length of finished set: "+ str(len(iterdata_set)))
-                iterdata_sets.append(iterdata_set)
-                iterdata_set=[]
-                count=1
-            iterdata_set.append(el)
-            if count_tot==iterdata_n:
-                iterdata_sets.append(iterdata_set)
-        print("number of iterdata sets: "+str(len(iterdata_sets)))
-        print("size of each iterdata set: ")
-        for el in iterdata_sets:
-            print(str(len(el)))
-        
-    t5 = af.execution_time("iterdata","time_end",stage,id,debug)
-    print(f'PP:0: iterdata: execution_time: {t5 - t4}: s')
-
     
     ###################################################################
     #### 4. PREPROCESSING SUMMARY
@@ -326,19 +249,15 @@ if __name__ == "__main__":
         ###################################################################
         stage="MR"
         id=0
-        start = af.execution_time("map-reduce","time_start",stage,id,debug)
-        functionobject = MapReduceFunctions(fq_seqname, datasource, seq_type, debug, BUCKET_NAME, fastq_folder, idx_folder, fasta_chunks_prefix, FASTA_BUCKET, gem_test, stage, file_format, tolerance)
-        mapreduce = MapReduce(functionobject.map_alignment1, functionobject.map_alignment2, functionobject.reduce_function, functionobject.create_sinple_key, runtime_id, runtime_mem, runtime_mem_r, buffer_size, file_format, func_timeout_map, func_timeout_reduce, 'DEBUG', BUCKET_NAME, stage, id, debug, skip_map,10000,lb_method, fastq_set_n, run_id, iterdata_n, num_chunks, fq_seqname)
-        map_time, creating_keys_time, reduce_time, multipart_upload_time = mapreduce(iterdata, iterdata_sets)
-        end = af.execution_time("map-reduce","time_end",stage,id,debug)
+        
+        mapfunc = MapFunctions(fq_seqname, datasource, seq_type, debug, BUCKET_NAME, fastq_folder, idx_folder, fasta_chunks_prefix, FASTA_BUCKET, stage, file_format, tolerance)
+
+        mapreduce = MapReduce(mapfunc, runtime_id, runtime_mem, runtime_mem_r, buffer_size, file_format, func_timeout_map, func_timeout_reduce, 'DEBUG', BUCKET_NAME, stage, id, debug, skip_map, lb_method, iterdata_n, num_chunks, fq_seqname)
+        map_time = mapreduce(iterdata)
 
         
         ###################################################################
         #### 6. MAP-REDUCE SUMMARY
         ###################################################################
         print("MAP-REDUCE SUMMARY")
-        af.printl("map phase: execution_time_total_varcall: "+str(map_time)+": s",stage, id, debug)
-        af.printl("reduce 1 phase: execution_time_total_varcall: "+str(creating_keys_time)+": s",stage, id, debug)
-        af.printl("reduce 2 phase: execution_time_total_varcall: "+str(reduce_time)+": s",stage, id, debug)
-        af.printl("reduce 3 phase: execution_time_total_varcall: "+str(multipart_upload_time)+": s",stage, id, debug)
-        af.printl("total time: execution_time_total_varcall: "+str(end - start)+": s",stage, id, debug)
+        print("map phase: execution_time_total_varcall: "+str(map_time)+"s")

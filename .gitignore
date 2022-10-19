@@ -128,5 +128,12 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-# Plots
+# Ignore until refactoring
 plots/
+varcall_out/
+dockerfile/
+lithopsgenetics/
+FastaPartitioner.py
+Metadata.py 
+RUN_TEST.sh
+LICENSE
