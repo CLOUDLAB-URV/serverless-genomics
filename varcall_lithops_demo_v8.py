@@ -1,16 +1,29 @@
+"""
+
+REMAINING THINGS TO DO:
+-Implement new fasta partitioner
+-Add s3 fastq location
+-Improve/Remake log system
+-Add the dockerfile folder
+-More refactoring
+
+"""
+
 import argparse
 import os.path
 import time
 import re
 import sys
 from random import randint
-import lithopsgenetics
-import lithopsgenetics.auxiliaryfunctions as af
 import Metadata
+import fastq_functions as fq_func
+import fasta_functions as fa_func
 
 # map/reduce functions and executor
 from map_reduce_executor import MapReduce
 from map_functions import MapFunctions
+
+CWD = os.getcwd()
 
 ###################################################################
 #### PIPELINE SETTINGS
@@ -60,48 +73,62 @@ parser.add_argument('-lb','--loadbalancer',help='load balancer execution method:
 ###################################################################
 #### PARSE COMMAND LINE ARGUMENTS
 ###################################################################
+def parse_optional_arg(arg_opt1, arg_opt2, text2_opt1=None, text2_opt2=None):
+    out1 = ""
+    out2 = ""
+    if arg_opt1 is not None:
+        out1 = arg_opt1
+        out2 = text2_opt1
+    else:
+        out1 = arg_opt2
+        out2 = text2_opt2
+    if out2 is not None:
+        return(out1, out2)
+    else:
+        return(out1)
+    
 args = parser.parse_args()
 
 # FastQ names
-fq_seqname = af.parse_optional_arg(args.fq_seq_name, None)
-fastq_file = af.parse_optional_arg(args.fastq1, "")
+fq_seqname = parse_optional_arg(args.fq_seq_name, None)
+fastq_file = parse_optional_arg(args.fastq1, "")
 
 # From input, determine whether it is paired- or single-end sequencing
-fastq_file2, seq_type = af.parse_optional_arg(args.fastq2, "","paired-end", "single-end")
+fastq_file2, seq_type = parse_optional_arg(args.fastq2, "","paired-end", "single-end")
 fasta_file = args.fasta
 
 # Cloud Storage Settings
-cloud_adr = af.parse_optional_arg(args.cloud_adr, "aws")
+cloud_adr = parse_optional_arg(args.cloud_adr, "aws")
 BUCKET_NAME = args.bucket
-FASTA_BUCKET = af.parse_optional_arg(args.fbucket, BUCKET_NAME)
+FASTA_BUCKET = parse_optional_arg(args.fbucket, BUCKET_NAME)
 
 # Fastq data source (SRA)
-datasource = af.parse_optional_arg(args.data_source, "s3")
+datasource = parse_optional_arg(args.data_source, "s3")
 
 # File Splitting Parameters
 # Fastq and fasta chunk sizes (fastq read no. multiplied by 4 to get number of lines)
-fastq_read_n = int(af.parse_optional_arg(args.fastq_read_n, None))
+fastq_read_n = int(parse_optional_arg(args.fastq_read_n, None))
 fastq_chunk_size = 4*fastq_read_n  # used in the case of fastq stored in s3.
 fasta_chunk_size = int(args.fasta_char_n)
-fasta_char_overlap = int(af.parse_optional_arg(args.fasta_char_overlap, 300))
+fasta_char_overlap = int(parse_optional_arg(args.fasta_char_overlap, 300))
 
 # Pipeline-Specific Parameters
-tolerance = af.parse_optional_arg(args.tolerance, 0)
-file_format = af.parse_optional_arg(args.file_format, "parquet")
+tolerance = parse_optional_arg(args.tolerance, 0)
+file_format = parse_optional_arg(args.file_format, "parquet")
 
 # Run Settings
-iterdata_n, function_n = af.parse_optional_arg(args.iterdata_n, None,args.iterdata_n, "all")
-concur_fun = int(af.parse_optional_arg(args.concur_fun, 10000))
-temp_to_s3 = af.parse_optional_arg(args.temp_to_s3, False)
-runtime_id = af.parse_optional_arg(args.runtime_id, 'lumimar/hutton-genomics-v03:18')
-runtime_mem = af.parse_optional_arg(args.runtime_mem, 1024)
-runtime_mem_r = af.parse_optional_arg(args.runtime_memr, 4096)
-runtime_storage = af.parse_optional_arg(args.runtime_storage, 4000)
-buffer_size = af.parse_optional_arg(args.buffer_size, "75%")
-func_timeout_map = af.parse_optional_arg(args.func_timeout_map, 2400)
-func_timeout_reduce = af.parse_optional_arg(args.func_timeout_reduce, 2400)
-skip_map = af.parse_optional_arg(args.skip_map, False)
-lb_method = af.parse_optional_arg(args.loadbalancer, "select")
+iterdata_n, function_n = parse_optional_arg(args.iterdata_n, None,args.iterdata_n, "all")
+concur_fun = int(parse_optional_arg(args.concur_fun, 10000))
+temp_to_s3 = parse_optional_arg(args.temp_to_s3, False)
+runtime_id = parse_optional_arg(args.runtime_id, 'lumimar/hutton-genomics-v03:18')
+runtime_mem = parse_optional_arg(args.runtime_mem, 1024)
+runtime_mem_r = parse_optional_arg(args.runtime_memr, 4096)
+runtime_storage = parse_optional_arg(args.runtime_storage, 4000)
+buffer_size = parse_optional_arg(args.buffer_size, "75%")
+func_timeout_map = parse_optional_arg(args.func_timeout_map, 2400)
+func_timeout_reduce = parse_optional_arg(args.func_timeout_reduce, 2400)
+skip_map = parse_optional_arg(args.skip_map, False)
+lb_method = parse_optional_arg(args.loadbalancer, "select")
 
 # DEBUGGING SETTINGS
 gem_test=False              # To execute only the gem indexer and mapper and skip the rest of map function
@@ -119,12 +146,34 @@ idx_folder = "fastq-indexes/"
 out_folder = "outputs/"
 s3_temp_folder = "temp_outputs/"
 
-# Local Log Folders
-local_log = "varcall_out/"
-if not os.path.exists(local_log):
-    os.makedirs(local_log)
-lambda_log_stream = 'my_log_stream'
 
+def generate_alignment_iterdata(list_fastq, list_fasta, iterdata_n):
+    """
+    Creates the lithops iterdata from the fasta and fastq chunk lists
+    """
+    os.chdir(CWD)
+    iterdata = []
+    
+    # Number of fastq chunks processed. If doing a partial execution, iterdata_n will need to be multiple of the number of fasta chunks
+    # so the index correction is done properly.
+    num_chunks = 0  
+    
+    # Generate iterdata
+    for fastq_key in list_fastq:
+        num_chunks += 1
+        for fasta_key in list_fasta:
+            iterdata.append({'fasta_chunk': fasta_key, 'fastq_chunk': fastq_key})
+
+    # Limit the length of iterdata if iterdata_n is not null.
+    if iterdata_n is not None: 
+        iterdata = iterdata[0:int(iterdata_n)]
+        if(len(iterdata)%len(list_fasta)!=0):
+            raise Exception("Hola")
+        else: 
+            num_chunks = len(iterdata)//len(list_fasta)
+
+    return iterdata, num_chunks
+ 
  
 if __name__ == "__main__":
     ###################################################################
@@ -134,7 +183,7 @@ if __name__ == "__main__":
     stage="PP"  
     id="X"      # this is for function id, which is not present in this case
     
-    PP_start = af.execution_time("preprocessing","time_start",stage,id,debug)
+    PP_start = time.time()
 
     # Run settings summary
     print("Variant Caller - Cloudbutton Genomics Use Case demo")
@@ -174,7 +223,7 @@ if __name__ == "__main__":
     ###################################################################
     #### 1. GENERATE LIST OF FASTQ CHUNKS (BYTE RANGES)
     ###################################################################
-    t0 = af.execution_time("fastq list","time_start",stage,id,debug)
+    t0 = time.time()
 
     num_spots = 0
     metadata = Metadata.SraMetadata()
@@ -190,16 +239,16 @@ if __name__ == "__main__":
         print("fastq size: " + fastq_size)
 
     # Generate fastq chunks
-    fastq_list = lithopsgenetics.prepare_fastq(cloud_adr, BUCKET_NAME, idx_folder, fastq_folder, fastq_read_n, seq_type, fastq_file, fq_seqname, datasource, num_spots, fastq_file2)
+    fastq_list = fq_func.prepare_fastq(fastq_read_n, fq_seqname, num_spots)
 
-    t1 = af.execution_time("fastq list","time_end",stage,id,debug)
+    t1 = time.time()
     print(f'PP:0: fastq list: execution_time: {t1 - t0}: s')
 
 
     ###################################################################
     #### 2. GENERATE LIST OF FASTA CHUNKS (if not present)
     ###################################################################
-    t2 = af.execution_time("fasta list","time_start",stage,id,debug)
+    t2 = time.time()
 
     # Fasta File Chunk Prefix:
     # the prefix contains the name of the fasta reference minus the suffix,
@@ -208,9 +257,9 @@ if __name__ == "__main__":
     fasta_chunks_prefix = re.sub("\.fasta|\.fa|\.fas", "_" + str(fasta_chunk_size) + "split_", fasta_file)
     
     # Generate fasta chunks
-    fasta_list = lithopsgenetics.prepare_fasta(cloud_adr, runtime_id, FASTA_BUCKET, fasta_folder, fasta_file, split_fasta_folder, fasta_chunk_size, fasta_chunks_prefix, fasta_char_overlap)
+    fasta_list = fa_func.prepare_fasta(cloud_adr, runtime_id, FASTA_BUCKET, fasta_folder, fasta_file, split_fasta_folder, fasta_chunk_size, fasta_chunks_prefix, fasta_char_overlap)
     
-    t3 = af.execution_time("fasta list","time_end",stage,id,debug)
+    t3 = time.time()
     print(f'PP:0: fasta list: execution_time: {t3 - t2}: s')
 
     
@@ -222,10 +271,10 @@ if __name__ == "__main__":
     # iterdata will be n_fastq_chunks * n_fasta_chunks.
     
     print("\nGenerating iterdata")
-    t4 = af.execution_time("iterdata","time_start",stage,id,debug)
+    t4 = time.time()
     
     # Generate iterdata
-    iterdata, num_chunks = lithopsgenetics.generate_alignment_iterdata(fastq_list, fasta_list, iterdata_n)
+    iterdata, num_chunks = generate_alignment_iterdata(fastq_list, fasta_list, iterdata_n)
     
     iterdata_n=len(iterdata)
     fastq_set_n=len(fasta_list) # number of fastq files aligned to each fasta chunk.
@@ -239,7 +288,7 @@ if __name__ == "__main__":
     print("number of fastq chunks: " + str(len(fastq_list)))
     print("fasta x fastq chunks: "+ str(len(fasta_list)*len(fastq_list)))
     print("number of iterdata elements: " + str(iterdata_n))
-    PP_end = af.execution_time("preprocessing","time_start",stage,id,debug)
+    PP_end = time.time()
     print(f'PP:0: preprocessing: execution_time: {PP_end - PP_start}: s')
 
 

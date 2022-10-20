@@ -5,8 +5,8 @@ import multiprocessing
 import subprocess as sp
 import pandas as pd
 from numpy import int64
-import lithopsgenetics
-import lithopsgenetics.auxiliaryfunctions as af
+import fastq_functions as fq_func
+import aux_functions as aux
 
 
 class MapFunctions:
@@ -56,7 +56,7 @@ class MapFunctions:
         #### PROCESSING FASTA CHUNKS
         ###################################################################
         fasta_chunk_folder_file = fasta_chunk.split("/")
-        fasta = af.copy_to_runtime(storage, self.FASTA_BUCKET, fasta_chunk_folder_file[0]+"/", fasta_chunk_folder_file[1], stage, id, self.debug)
+        fasta = aux.copy_to_runtime(storage, self.FASTA_BUCKET, fasta_chunk_folder_file[0]+"/", fasta_chunk_folder_file[1])
         gem_ref_nosuffix = os.path.splitext(fasta)[0]
         gem_ref = gem_ref_nosuffix + '.gem'
         cpus=multiprocessing.cpu_count()
@@ -77,8 +77,8 @@ class MapFunctions:
         os.rename(old_filtered_map_file, filtered_map_file)
         
         # Copy intermediate files to storage for index correction
-        map_index_file = af.copy_to_s3(stage, id, self.debug, storage, self.BUCKET_NAME, map_index_file, True, 'map_index_files/')
-        filtered_map_file = af.copy_to_s3(stage, id, self.debug, storage, self.BUCKET_NAME, filtered_map_file, True, 'filtered_map_files/')
+        map_index_file = aux.copy_to_s3(storage, self.BUCKET_NAME, map_index_file, True, 'map_index_files/')
+        filtered_map_file = aux.copy_to_s3(storage, self.BUCKET_NAME, filtered_map_file, True, 'filtered_map_files/')
         map_index_file = map_index_file.replace("map_index_files/", "")
         filtered_map_file = filtered_map_file.replace("filtered_map_files/", "")
                 
@@ -95,12 +95,12 @@ class MapFunctions:
         ###################################################################
         fasta_n=re.sub(r'^\S*split_0*(\d*)\S*fasta', r'\1', fasta_chunk)
         fastq_n=re.sub('^[\s|\S]*number\':\s(\d*),[\s|\S]*$', r"\1", str(fastq_chunk))
-        af.copy_to_runtime(storage, self.BUCKET_NAME, 'correctedIndex/', corrected_map_index_file, self.stage, old_id, self.debug)
-        af.copy_to_runtime(storage, self.BUCKET_NAME, 'filtered_map_files/', filtered_map_file, self.stage, old_id, self.debug)
+        aux.copy_to_runtime(storage, self.BUCKET_NAME, 'correctedIndex/', corrected_map_index_file)
+        aux.copy_to_runtime(storage, self.BUCKET_NAME, 'filtered_map_files/', filtered_map_file)
         corrected_map_index_file = "/tmp/" + corrected_map_index_file
         filtered_map_file = "/tmp/" + filtered_map_file
         fasta_chunk_folder_file = fasta_chunk.split("/")
-        fasta = af.copy_to_runtime(storage, self.FASTA_BUCKET, fasta_chunk_folder_file[0]+"/", fasta_chunk_folder_file[1], self.stage, old_id, self.debug) # Download fasta chunk
+        fasta = aux.copy_to_runtime(storage, self.FASTA_BUCKET, fasta_chunk_folder_file[0]+"/", fasta_chunk_folder_file[1]) # Download fasta chunk
         
         ###################################################################
         #### FILTER ALIGNMENTS (CORRECT .map FILE)
@@ -131,25 +131,15 @@ class MapFunctions:
     def download_fastq(self, id, stage, fastq_chunk):
         """
         Download fastq chunks depending on source
-        """
-        if self.datasource == "s3":
-            if self.seq_type == "paired-end":
-                fastq1 = lithopsgenetics.fastq_to_mapfun("fastq1", fastq_chunk[0][0], fastq_chunk[0][1], self.BUCKET_NAME, self.fastq_folder, self.idx_folder, self.datasource, stage,id, self.debug)
-                fastq2 = lithopsgenetics.fastq_to_mapfun("fastq2", fastq_chunk[1][0], fastq_chunk[1][1], self.BUCKET_NAME, self.fastq_folder, self.idx_folder, self.datasource, stage,id, self.debug)
-                base_name = os.path.splitext(fastq1)[0]#+'.pe'
-            else:   # single-end sequencing
-                fastq1 = lithopsgenetics.fastq_to_mapfun("fastq", fastq_chunk[0], fastq_chunk[1], self.BUCKET_NAME, self.fastq_folder, self.idx_folder, self.datasource, stage,id, self.debug)
-                base_name = os.path.splitext(fastq1)[0]+'.se'
-                fastq2 = "no"      
-        elif self.datasource == "SRA":
-            if self.seq_type == "paired-end":
-                fastq1 = lithopsgenetics.fastq_to_mapfun("fastq", fastq_chunk[0], fastq_chunk[1], self.BUCKET_NAME, self.fastq_folder, self.idx_folder, self.datasource, stage,id, self.debug)
-                base_name = os.path.splitext(fastq1)[0]#+'.pe'
-                fastq2 = "yes"
-            else:   # single-end sequencing
-                fastq1 = lithopsgenetics.fastq_to_mapfun("fastq", fastq_chunk[0], fastq_chunk[1], self.BUCKET_NAME, self.fastq_folder, self.idx_folder, self.datasource, stage,id, self.debug)
-                fastq2 = "no"
-                base_name = os.path.splitext(fastq1)[0]#+'.se'
+        """   
+        if self.seq_type == "paired-end":
+            fastq1 = fq_func.fastq_to_mapfun(fastq_chunk[0], fastq_chunk[1])
+            base_name = os.path.splitext(fastq1)[0] #+'.pe'
+            fastq2 = "yes"
+        else:   # single-end sequencing
+            fastq1 = fq_func.fastq_to_mapfun(fastq_chunk[0], fastq_chunk[1])
+            fastq2 = "no"
+            base_name = os.path.splitext(fastq1)[0] #+'.se'
         return fastq1, fastq2, base_name
     
     

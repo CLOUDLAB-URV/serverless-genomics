@@ -130,10 +130,6 @@ dmypy.json
 
 # Ignore until refactoring
 plots/
-varcall_out/
 dockerfile/
-lithopsgenetics/
 FastaPartitioner.py
-Metadata.py 
 RUN_TEST.sh
-LICENSE
