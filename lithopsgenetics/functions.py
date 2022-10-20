@@ -332,8 +332,8 @@ def prepare_fasta(BUCKET_NAME, fasta_folder, fasta_file, fasta_folder_index, fas
         #print("fasta list: " + str(fasta_list))
     except:
         # print("split fasta folder empty / not found")
-        if list_files_index:
-            storage.delete_objects(BUCKET_NAME, list_files_index)
+        # if list_files_index:
+        #    storage.delete_objects(BUCKET_NAME, list_files_index)
         print("index fasta folder empty / not found, then generating index fasta file and storing it")
         # Modified, print("splitting fasta file and storing chunks")
         # Modified, split_fastafile(cloud_adr, runtime, BUCKET_NAME, fasta_folder, fasta_file, fasta_folder_index, fasta_chunk_size, fasta_line_overlap)
