@@ -39,6 +39,7 @@ Optional
 ###################################################################
 # PACKAGES
 # generic packages
+import pathlib
 import argparse
 import math
 import os.path
@@ -184,210 +185,36 @@ if not os.path.exists(local_log):
     os.makedirs(local_log)
 lambda_log_stream = 'my_log_stream'
 
-###################################################################
-###################################################################
 
-
-###################################################################
-###################################################################
-# MAP - REDUCE FUNCTIONS - MAP STAGE (STAGE A)
-def map_alignment(id, fasta_chunk, fastq_chunk, storage):
-    """
-    map function to process fasta + fastq chunks to general sequence alignmments
-    final format: mpileup
-    """
-    
-    # Settings summary    
-    stage="A"+str(randint(1000,9999))
-    cpus=multiprocessing.cpu_count()
-    
-    # CONTROL VARIABLES 
-    # fasta chunk ID
-    fasta_n=fasta_chunk['id']+'_'+str(fasta_chunk['offset_base'])
-    fastq_n=re.sub('^[\s|\S]*number\':\s(\d*),[\s|\S]*$', r"\1", str(fastq_chunk))
-    func_key=fq_seqname+"-fq_"+fastq_n+"-fa_"+fasta_n
-    
-    # check and prepare /tmp folder
-    # remove files from /tmp folder if they were left from previous runs of same script
-    af.clear_tmp(stage, id, debug)
-    
-    ###################################################################
-    # PROCESSING FASTQ AND FASTA CHUNKS
-    # 1. PROCESSING FASTQ CHUNK(S)
-    # 1.1. Initialize variables
-    fastq1 =""
-    fastq2 =""
-    gem_ref =""
-    
-    # 1.2. Download fastq chunk depending on source
-    if datasource == "s3":
-        if seq_type == "paired-end":
-            af.printl("processing paired-end fastq chunks",stage,id,debug)
-            fastq1 = lithopsgenetics.fastq_to_mapfun("fastq1", fastq_chunk[0][0], fastq_chunk[0][1], BUCKET_NAME, fastq_folder, idx_folder, datasource, stage,id,debug)
-            fastq2 = lithopsgenetics.fastq_to_mapfun("fastq2", fastq_chunk[1][0], fastq_chunk[1][1], BUCKET_NAME, fastq_folder, idx_folder, datasource, stage,id,debug)
-            base_name = os.path.splitext(fastq1)[0]#+'.pe'
-        else:   # single-end sequencing
-            af.printl("processing single-end fastq chunk",stage,id,debug)
-            fastq1 = lithopsgenetics.fastq_to_mapfun("fastq", fastq_chunk[0], fastq_chunk[1], BUCKET_NAME, fastq_folder, idx_folder, datasource, stage,id,debug)
-            base_name = os.path.splitext(fastq1)[0]+'.se'
-            fastq2 = "no"
-    elif datasource == "SRA":
-        if seq_type == "paired-end":
-            af.printl("processing paired-end fastq chunks",stage,id,debug)
-            fastq1 = lithopsgenetics.fastq_to_mapfun("fastq", fastq_chunk[0], fastq_chunk[1], BUCKET_NAME, fastq_folder, idx_folder, datasource, stage,id,debug)
-            base_name = os.path.splitext(fastq1)[0]#+'.pe'
-            fastq2 = "yes"
-        else:   # single-end sequencing
-            af.printl("processing single-end fastq chunk",stage,id,debug)
-            fastq1 = lithopsgenetics.fastq_to_mapfun("fastq", fastq_chunk[0], fastq_chunk[1], BUCKET_NAME, fastq_folder, idx_folder, datasource, stage,id,debug)
-            fastq2 = "no"
-            base_name = os.path.splitext(fastq1)[0]#+'.se'
-    
-    # CHECKING IF GEM INDEX HAS ALREADY BEEN GENERATED
-    gem_list = []
-    gem_folder = "gem-chunks/"
-    gem_ref=""
-    gem_index_present=""
-    try: 
-        gem_list = storage.list_keys(BUCKET_NAME, prefix=gem_folder + fasta_chunks_prefix)
-    except:
-        af.printl("split gem folder empty / not found", stage, id, debug)
-
-    if not gem_list or gem_list == []:  # gem files has not been generated
-        # 2. PROCESSING FASTA CHUNK
-        # 2a. copying fasta chunk to runtime
-        fasta_chunk_folder_file = fasta_chunk['key_fasta'].split("/")
-        fasta = af.copy_to_runtime(storage, FASTA_BUCKET, fasta_chunk_folder_file[0]+"/", fasta_chunk_folder_file[1], stage, id, debug, 
-                                    {'Range': f"bytes={fasta_chunk['offset_base']}-{fasta_chunk['last_byte+']}"}) # Download fasta chunk
-        af.print_head_and_nlines(fasta, "fasta file", 1, stage, id, debug)
-
-        # 2b. creating gem index file for fasta chunk [gem-indexer adds .gem to the output name]
-        gem_ref_nosuffix = os.path.splitext(fasta)[0]
-        gem_ref = gem_ref_nosuffix + '.gem'
-
-        # Execute gem-indexer
-        indexer_output = sp.run(['gem-indexer', '--input', fasta, '--threads', str(cpus), '-o', gem_ref_nosuffix], capture_output=True)
-        print(str(indexer_output)) # TODO ver si se genera
-    else:
-        # Download gem files in case of present in cloud storage (generated from previous runs)
-        gem_index_present=True
-        for gem_file in gem_list:
-            query=r'' + str(fasta_n) + '.gem$'
-            if re.search(query, gem_file):
-                gem_file_name=fasta_chunks_prefix+str(fasta_n)+".gem"
-                gem_ref = af.copy_to_runtime(storage, BUCKET_NAME, gem_folder, gem_file_name, stage, id, debug)
-            else:
-                af.printl("unmatched gem file "+gem_file)
-
-    while True:
-        a = 3
-    ###################################################################
-    # 3. GENERATE ALIGNMENT AND ALIGNMENT INDEX (FASTQ TO MAP - gem3-mapper)
-    mapper_output = sp.run(['/function/bin/map_index_and_filter_map_file_cmd_awsruntime.sh', gem_ref, fastq1, fastq2, base_name, datasource, seq_type], capture_output=True)
-    
-    if gem_test == True:
-        af.printl("running only gem indexer and mapper - skipping rest of map function", stage, id, debug)
-    else: 
-        # Initialize file names
-        map_index_file = base_name + "_map.index.txt"
-        os.rename(map_index_file,"/tmp/" + func_key+ "_map.index.txt")
-        map_index_file = "/tmp/" + func_key+ "_map.index.txt"
-        old_filtered_map_file = base_name + "_filt_wline_no.map"
-        filtered_map_file = base_name + "_" + str(id) + "_filt_wline_no.map"
-        os.rename(old_filtered_map_file, filtered_map_file)
-            
-    # Copy files to storage for index correction
-    map_index_file = af.copy_to_s3(stage, id, debug, storage, BUCKET_NAME, map_index_file, True, 'map_index_files/')
-    filtered_map_file = af.copy_to_s3(stage, id, debug, storage, BUCKET_NAME, filtered_map_file, True, 'filtered_map_files/')
-    map_index_file = map_index_file.replace("map_index_files/", "")
-    filtered_map_file = filtered_map_file.replace("filtered_map_files/", "")
-
-    return fasta_chunk, fastq_chunk, map_index_file, filtered_map_file, base_name, gem_index_present, id
-
-
-def map_alignment2(id, old_id, fasta_chunk, fastq_chunk, corrected_map_index_file, filtered_map_file, base_name, gem_index_present, storage):
-    ##################################################################
-    # RECOVER DATA FROM PREVIOUS MAP
-    fasta_n=fasta_chunk['id']+'_'+fasta_chunk['offset_base']
-    fastq_n=re.sub('^[\s|\S]*number\':\s(\d*),[\s|\S]*$', r"\1", str(fastq_chunk))
-    af.copy_to_runtime(storage, BUCKET_NAME, 'correctedIndex/', corrected_map_index_file, stage, id, debug)
-    af.copy_to_runtime(storage, BUCKET_NAME, 'filtered_map_files/', filtered_map_file, stage, id, debug)
-    corrected_map_index_file = "/tmp/" + corrected_map_index_file
-    filtered_map_file = "/tmp/" + filtered_map_file
-    # Modified, fasta_chunk_folder_file = fasta_chunk.split("/")
-    fasta_chunk_folder_file = fasta_chunk['key_fasta'].split("/") 
-    # Modified, fasta = af.copy_to_runtime(storage, FASTA_BUCKET, fasta_chunk_folder_file[0]+"/", fasta_chunk_folder_file[1], stage, id, debug) # Download fasta chunk
-    fasta = af.copy_to_runtime(storage, FASTA_BUCKET, fasta_chunk_folder_file[0]+"/", fasta_chunk_folder_file[1], stage, id, debug, 
-                                {'Range': f"bytes={fasta_chunk['offset_base']}-{fasta_chunk['last_byte+']}"}) # Download fasta chunk
-
-    ##################################################################
-    #3. FILTER ALIGNMENTS (CORRECT .map FILE)
-    map_filtering_output = sp.run(['/function/bin/map_file_index_correction.sh', corrected_map_index_file, filtered_map_file, str(tolerance)], capture_output=True)  # change to _v3.sh and runtime 20
-
-    corrected_map_file = base_name + "_" + str(old_id) + "_filt_wline_no_corrected.map"
+def mpileup_conversion(mpileup_file, fasta_chunk, fasta_key, fastq_chunk, file_format, BUCKET_NAME, storage):
+        """
+        Convert resulting data to csv/parquet and txt
+        """
         
-    ###################################################################
-    # in the case of pre-loaded gem index, load fasta file for mpileup processing
-    if gem_index_present:
-        af.printl("processing fasta file for mpileup generation", stage, id, debug)
-
-        # 2. PROCESSING FASTA CHUNK
-        # 2a. copying fasta chunk to runtime
-        ####start2a
-        print("F\t"+str(fasta_n)+"\t"+fastq_n)
-        tm2 = af.execution_time("Fasta chunk","time_start",stage,id,debug)
-        fasta_chunk_folder_file = fasta_chunk.split("/")
-        fasta = af.copy_to_runtime(storage, FASTA_BUCKET, fasta_chunk_folder_file[0]+"/", fasta_chunk_folder_file[1], stage, id, debug)
-        af.print_head_and_nlines(fasta, "fasta file", 1, stage, id, debug)
-        tm3 = af.execution_time("Fasta chunk","time_end",stage,id,debug)
-        af.printl(f' Fasta chunk: execution_time: {tm3 - tm2}: s',stage,id,debug)
-        ####end2a
-        print("f\t"+str(fasta_n)+"\t"+fastq_n)
-            
-        ###################################################################
-        # 4. GENERATE MPILEUP FROM MAP FILE
-        tm12 = af.execution_time("gempileup","time_start", stage, id, debug)
-        print("M\t"+str(fasta_n)+"\t"+fastq_n)
-        mpileup_out = sp.run(['/function/bin/gempileup_run.sh', corrected_map_file, fasta], capture_output=True)
-        
-        af.print_formatted("MPILEUP OUTPUT", mpileup_out, stage, id, debug)
-        tm13 = af.execution_time("gempileup","time_end", stage, id, debug)
-        print("m\t"+str(fasta_n)+"\t"+fastq_n)
-        af.printl(f' gempileup: execution_time: {tm13 - tm12}: s',stage,id,debug)
-        
-        mpileup_file = corrected_map_file + ".mpileup"
-
-        ###################################################################
-        # FIX MPILEUP COORDINATES (pending on new fasta file splitting implementation)
-
-        ###################################################################
-        # 6. CONVERT MPILEUP TO PARQUET / CSV
-        tm14 = af.execution_time("csv/parquet","time_start", stage, id, debug)
-        print("N\t"+str(fasta_n)+"\t"+fastq_n)
+        # Filter mpileup file   
         with open(mpileup_file, 'r') as f:
             rows = f.read().splitlines()
             content = [row.split("\t") for row in rows]
-            content.pop(-1)  # modify to check if last line is empty
+            content.pop(-1) 
             del rows
 
-        #Convert mpileup to Pandas dataframe -> '1' index position -> int
+        # Convert mpileup to Pandas dataframe
         df = pd.DataFrame(data=content)
         df.columns = df.columns.astype(str)
         df['1'] = df['1'].astype(int64)
 
         #create intermediate key
-        fasta_chunk = fasta_chunk.split("_")
         fasta_key = fasta_chunks_prefix
         disallowed_characters = "._-!/·¡"
         for character in disallowed_characters:
             fasta_key = fasta_key.replace(character,"")
 
-        df2 = df.iloc[-1]
-        max_index = df2['1']
+        # Create intermediate key
+        fasta_chunk = fasta_chunk['id']+'_'+fasta_chunk['offset_base']
+        max_index = df.iloc[-1]['1']
+        intermediate_key = file_format + "/" + fasta_key + "_" + fasta_chunk + "-" + fastq_chunk[0] + "_chunk" + str(fastq_chunk[1]["number"]) + "_" + str(max_index)
 
-        intermediate_key = file_format + "/" + fasta_key + "_" + fasta_chunk[-1] + "-" + fastq_chunk[0] + "_chunk" + str(fastq_chunk[1]["number"]) + "_" + str(max_index)
         range_index = []
-
         x = 0
         while x < max_index:
             if(x < max_index):
@@ -401,36 +228,156 @@ def map_alignment2(id, old_id, fasta_chunk, fastq_chunk, corrected_map_index_fil
         content = ""
         for i in range(len(df3)):
             content = content + str(range_index[i+1]) + ":" + str(df3.iloc[i,0]) + "\n"
-        #-----------------
 
-        af.printl("intermediate key: \n"+ file_format + "/" + fasta_key + "_" + fasta_chunk[-1] + "-" + fastq_chunk[0] + "_chunk" + str(fastq_chunk[1]["number"]), stage, id )
+        # Upload .txt file to storage
+        storage.put_object(bucket=BUCKET_NAME, key=intermediate_key + ".txt", body=content)
 
-        #write the mpileup file to the tmp directory
-        map_output_file =""
+        # Write the mpileup file to the tmp directory
         if file_format=="csv":
-            map_output_file="csv/"+mpileup_file+".csv"
             df.to_csv(mpileup_file+".csv", index=False, header=False)
-            #Upload the file to the s3
             with open(mpileup_file+".csv", 'rb') as f:
                 storage.put_object(bucket=BUCKET_NAME, key=intermediate_key + ".csv", body=f)
 
-            storage.put_object(bucket=BUCKET_NAME, key=intermediate_key + ".txt", body=content)
         elif file_format=="parquet":
-            map_output_file="parquet/"+mpileup_file+".parquet"
             df.to_parquet(mpileup_file+".parquet")
-            #Upload the file to the s3
             with open(mpileup_file+".parquet", 'rb') as f:
                 storage.put_object(bucket=BUCKET_NAME, key=intermediate_key + ".parquet", body=f)
-            storage.put_object(bucket=BUCKET_NAME, key=intermediate_key + ".txt", body=content)
-        else:
-            af.printl("file format not supported: "+file_format,stage,id,debug)
-
-        tm15 = af.execution_time("csv/parquet","time_end", stage, id, debug)
-        print("n\t"+str(fasta_n)+"\t"+fastq_n)
-        af.printl(f' csv/parquet: execution_time: {tm15 - tm14}: s',stage,id,debug)
         
         return [intermediate_key+"."+file_format, intermediate_key+".txt"]
 
+def download_fastq(id, stage, fastq_chunk):
+        """
+        Download fastq chunks depending on source
+        """   
+        if seq_type == "paired-end":
+            fastq1 = fastq_to_mapfun(fastq_chunk[0], fastq_chunk[1])
+            base_name = os.path.splitext(fastq1)[0] #+'.pe'
+            fastq2 = "yes"
+        else:   # single-end sequencing
+            fastq1 = fastq_to_mapfun(fastq_chunk[0], fastq_chunk[1])
+            fastq2 = "no"
+            base_name = os.path.splitext(fastq1)[0] #+'.se'
+        return fastq1, fastq2, base_name
+
+
+###################################################################
+###################################################################
+# MAP - REDUCE FUNCTIONS - MAP STAGE (STAGE A)
+def map_alignment(id, fasta_chunk, fastq_chunk, storage):
+    """
+    map function to process fasta + fastq chunks to general sequence alignmments
+    final format: mpileup
+    """
+    
+    # CONTROL VARIABLES 
+    stage="A"+str(randint(1000,9999))
+    fasta_n=fasta_chunk['id']+'_'+str(fasta_chunk['offset_base'])
+    fastq_n=re.sub('^[\s|\S]*number\':\s(\d*),[\s|\S]*$', r"\1", str(fastq_chunk))
+    func_key=fq_seqname+"_fq"+fastq_n+"-"+fasta_n
+    
+    ###################################################################
+    #### PROCESSING FASTQ CHUNKS
+    ###################################################################
+    # Download fastq chunk depending on source
+    fastq1, fastq2, base_name = download_fastq(id, stage, fastq_chunk)
+
+    ###################################################################
+    #### PROCESSING FASTA CHUNKS
+    ###################################################################
+    fasta_folder_file = fasta_chunk['key_fasta'].split("/")
+    fasta = af.copy_to_runtime(storage, FASTA_BUCKET, fasta_folder_file[0]+"/", fasta_folder_file[1], 
+                                {'Range': f"bytes={fasta_chunk['offset_base']}-{fasta_chunk['last_byte+']}"}, fasta_chunk['offset_base'], fasta_chunk) # Download fasta chunk
+    
+
+    gem_ref_nosuffix = os.path.splitext(fasta)[0]
+    gem_ref = gem_ref_nosuffix + '.gem'
+    cpus=multiprocessing.cpu_count()
+    sp.run(['gem-indexer', '--input', fasta, '--threads', str(cpus), '-o', gem_ref_nosuffix], capture_output=True)
+    
+
+    ###################################################################
+    #### GENERATE ALIGNMENT AND ALIGNMENT INDEX (FASTQ TO MAP)
+    ###################################################################
+    sp.run(['/function/bin/map_index_and_filter_map_file_cmd_awsruntime.sh', gem_ref, fastq1, fastq2, base_name, datasource, seq_type], capture_output=True)
+
+    # Reorganize file names
+    map_index_file = base_name + "_map.index.txt"
+    os.rename(map_index_file,"/tmp/" + func_key+ "_map.index.txt")
+    map_index_file = "/tmp/" + func_key+ "_map.index.txt"
+    old_filtered_map_file = base_name + "_filt_wline_no.map"
+    filtered_map_file = base_name + "_" + str(id) + "_filt_wline_no.map"
+    os.rename(old_filtered_map_file, filtered_map_file)
+            
+    # Copy intermediate files to storage for index correction
+    map_index_file = af.copy_to_s3(storage, BUCKET_NAME, map_index_file, True, 'map_index_files/')
+    filtered_map_file = af.copy_to_s3(storage, BUCKET_NAME, filtered_map_file, True, 'filtered_map_files/')
+    map_index_file = map_index_file.replace("map_index_files/", "")
+    filtered_map_file = filtered_map_file.replace("filtered_map_files/", "")
+
+    return fasta_chunk, fastq_chunk, map_index_file, filtered_map_file, base_name, id
+
+
+def map_alignment2(id, old_id, fasta_chunk, fastq_chunk, corrected_map_index_file, filtered_map_file, base_name, storage):
+    """
+    Second map  function, executed after the previous map function (map_alignment1) and the index correction.
+    """
+    
+    ###################################################################
+    #### RECOVER DATA FROM PREVIOUS MAP
+    ###################################################################
+    fasta_n=fasta_chunk['id']+'_'+str(fasta_chunk['offset_base'])
+    fastq_n=re.sub('^[\s|\S]*number\':\s(\d*),[\s|\S]*$', r"\1", str(fastq_chunk))
+    af.copy_to_runtime(storage, BUCKET_NAME, 'correctedIndex/', corrected_map_index_file)
+    af.copy_to_runtime(storage, BUCKET_NAME, 'filtered_map_files/', filtered_map_file)
+    corrected_map_index_file = "/tmp/" + corrected_map_index_file
+    filtered_map_file = "/tmp/" + filtered_map_file
+    # Modified, fasta_folder_file = fasta_chunk.split("/")
+    fasta_folder_file = fasta_chunk['key_fasta'].split("/") 
+    # Modified, fasta = af.copy_to_runtime(storage, FASTA_BUCKET, fasta_folder_file[0]+"/", fasta_folder_file[1], stage, id, debug) # Download fasta chunk
+    fasta = af.copy_to_runtime(storage, FASTA_BUCKET, fasta_folder_file[0]+"/", fasta_folder_file[1], 
+                                {'Range': f"bytes={fasta_chunk['offset_base']}-{fasta_chunk['last_byte+']}"}, fasta_chunk['offset_base'], fasta_chunk) # Download fasta chunk
+
+    ###################################################################
+    #### FILTER ALIGNMENTS (CORRECT .map FILE)
+    ###################################################################
+    map_filtering_output = sp.run(['/function/bin/map_file_index_correction_v3.sh', corrected_map_index_file, filtered_map_file, str(tolerance)], capture_output=True)  # change to _v3.sh and runtime 20
+
+    corrected_map_file = base_name + "_" + str(old_id) + "_filt_wline_no_corrected.map"
+        
+    ###################################################################
+    #### GENERATE MPILEUP FROM MAP FILE
+    ###################################################################
+    mpileup_out = sp.run(['/function/bin/gempileup_run.sh', corrected_map_file, fasta], capture_output=True)
+    mpileup_file = corrected_map_file + ".mpileup"
+
+        
+    ###################################################################
+    #### CONVERT MPILEUP TO PARQUET / CSV
+    ###################################################################
+    format_key, text_key = mpileup_conversion(mpileup_file, fasta_chunk, fasta_chunks_prefix, fastq_chunk, file_format, BUCKET_NAME, storage)
+
+    return format_key, text_key 
+
+
+def fastq_to_mapfun(fastq_file_key, fastq_chunk_data):
+    '''
+    Function executed within the map function to retrieve the relevant fastq chunk from object storage
+    '''
+    seq_name = fastq_file_key
+
+    sp.call(['chmod','+x','fastq-dump'])
+    sp.run(['vdb-config', '-i'])    # To supress a warning that appears the first time vdb-config is used
+
+    # Report cloud identity so it can take data from s3 needed to be executed only once per vm
+    output = str(sp.run(['vdb-config', '--report-cloud-identity', 'yes'], capture_output=True).stdout)
+    
+    os.chdir(f"/tmp")
+    temp_fastq = f'/tmp/'+seq_name+f'_chunk{fastq_chunk_data["number"]}.fastq'
+    data_output = sp.run(['fastq-dump', str(seq_name), '-X', str(int(fastq_chunk_data["start_line"])) , '-N', str(int(fastq_chunk_data["end_line"])),'-O',f'/tmp'],
+                            capture_output=True)              
+    os.rename(f'/tmp/'+seq_name+'.fastq', temp_fastq)
+    
+    return temp_fastq
 
 ###################################################################
 ###################################################################
@@ -540,12 +487,6 @@ def reduce_function(key, range, mpu_id, n_part, mpu_key, file_format, buffer_siz
     tr1 = af.execution_time("retrieve mpileups","time_end",stage,id,debug)
     af.printl(f' retrieve mpileups: execution_time:  {tr1 - tr0}: s',stage,id,debug)
     af.printl("r\t"+fasta_n_first+"\t"+str(range['start']),stage,id,debug)
-
-    # chr_table = af.copy_to_runtime(storage, FASTA_BUCKET, "cache/", "hashtable.data", stage, id, debug)
-    # af.printl("chromosome hash table: "+str(chr_table), stage, id, debug)
-    # with open(chr_table, 'r') as f:
-    #     for line in f:
-    #         af.printl(line, stage, id, debug)
 
     wd = os.getcwd()
     os.chdir("/tmp")
@@ -671,7 +612,7 @@ if __name__ == "__main__":
     # followed by block length and then "_split_" i.e. for hg19.fa
     # with chunks with block length of 400000 it would be hg19_400000_split_
     # Modified,  fasta_chunks_prefix = re.sub("\.fasta|\.fa|\.fas", "_" + str(fasta_chunk_size) + "split_", fasta_file)
-    
+    fasta_chunks_prefix = pathlib.Path(fasta_file).stem
     # Generate fasta chunks
     # Modified,  fasta_list = lithopsgenetics.prepare_fasta(cloud_adr, runtime_id, FASTA_BUCKET, fasta_folder, fasta_file, fasta_folder_index, fasta_chunk_size, fasta_chunks_prefix, fasta_char_overlap)
     fasta_index = lithopsgenetics.prepare_fasta(FASTA_BUCKET, fasta_folder, fasta_file, fasta_folder_index, workers_fasta)
@@ -690,33 +631,7 @@ if __name__ == "__main__":
 
     # split iterdata if number higher than concurrent functions
     iterdata_n=len(iterdata)
-    # Modified, fastq_set_n=len(fasta_list) # number of fastq files aligned to each fasta chunk.
-    iterdata_sets=[]
-    iterdata_set=[]
-    if iterdata_n > concur_fun:
-        print("number of concurrent functions smaller than overall iterdata")
-        count=0
-        count_tot=0
-        for el in iterdata:
-            count+=1
-            count_tot+=1
-            fastq_count=el["fastq_chunk"][1]["number"]
-            if ((count+fastq_set_n)>concur_fun and fastq_count==1):
-                print("starting new iterdata set")
-                print("count total: \t"+str(count_tot)+"\tcount: "+str(count)+"\tfastq_count "+str(fastq_count))
-                print("length of finished set: "+ str(len(iterdata_set)))
-                iterdata_sets.append(iterdata_set)
-                iterdata_set=[]
-                count=1
-            iterdata_set.append(el)
-            if count_tot==iterdata_n:
-                iterdata_sets.append(iterdata_set)
-    
-    print("number of iterdata sets: "+str(len(iterdata_sets)))
-    print("size of each iterdata set: ")
-    for el in iterdata_sets:
-        print(str(len(el)))
-        
+            
     t5 = af.execution_time("iterdata","time_end",stage,id,debug)
     print(f'PP:0: iterdata: execution_time: {t5 - t4}: s')
 
@@ -740,7 +655,12 @@ if __name__ == "__main__":
         id=0
         start = af.execution_time("map-reduce","time_start",stage,id,debug)
         mapreduce = MapReduce(map_alignment, map_alignment2, reduce_function, create_sinple_key, runtime_id, runtime_mem, runtime_mem_r, buffer_size, file_format, func_timeout_map, func_timeout_reduce, 'DEBUG', BUCKET_NAME, stage, id, debug, skip_map,10000,lb_method, fastq_set_n, run_id, iterdata_n, num_chunks, fq_seqname)
-        map_time, creating_keys_time, reduce_time, multipart_upload_time = mapreduce(iterdata, iterdata_sets)
+        map_time, creating_keys_time, reduce_time, multipart_upload_time = mapreduce(iterdata)
+       
+        print(str(map_time))
+        exit()  # TODO
+
+        
         end = af.execution_time("map-reduce","time_end",stage,id,debug)
 
 

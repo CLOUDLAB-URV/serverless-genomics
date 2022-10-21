@@ -8,6 +8,7 @@ COMMAND="$1"
 THREADS="$2"
 INPUTS=( "${@:3}" )
 
+exit 0
 if [[ "$COMMAND" == "" || "$THREADS" == "" || ! ( "$THREADS" =~ ^[1-9][0-9]*$ ) || "${#INPUTS[@]}" == 0 ]]; then
         echo "Usage: binary_reducer <command> <num_threads> <input_1> ..." > /dev/stderr
           exit 1

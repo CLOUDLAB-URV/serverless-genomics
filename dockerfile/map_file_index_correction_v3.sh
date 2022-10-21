@@ -217,8 +217,13 @@ else {
 }
 END {
 total_filtered_reads = count_filter + count_other_filter
-pct_discarded_reads = count_discard* 100 / count_reads
-pct_filtered_reads = total_filtered_reads * 100 / count_reads
+if (count_reads == 0) {
+        pct_discarded_reads = 0
+        pct_filtered_reads = 0
+}else{
+    pct_discarded_reads = count_discard* 100 / count_reads
+    pct_filtered_reads = total_filtered_reads * 100 / count_reads
+}
 
 print "INDEX CORRECTION - SUMMARY STATS"
 print "all reads:\t\t\t"count_reads

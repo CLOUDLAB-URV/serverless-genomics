@@ -231,43 +231,39 @@ def generate_alignment_iterdata(BUCKET_NAME, list_fastq, fasta_index, fasta_file
     """
     Creates the lithops iterdata from the fasta and fastq chunk lists
     """
-    storage = Storage()
-    
+    storage = Storage()    
     os.chdir(CWD)
 
-    num_chunks = 2
+    # Number of fastq chunks processed. If doing a partial execution, iterdata_n will need to be multiple of the number of fasta chunks
+    # so the index correction is done properly.
+    num_chunks = 0 
     data_index = iterdata = []
     try:
         data_index = storage.get_object(BUCKET_NAME, fasta_index).decode('utf-8').split('\n')  
         for fastq_key in list_fastq:
+            num_chunks += 1
             for i, sequence in enumerate(data_index):         
                 #print(fastq_key)
                 values = sequence.split(' ')
                 try: 
-                    next_val = data_index.split(' ')
+                    next_val = data_index[i+1].split(' ')
                     last_byte_plus = int(next_val[1]-1) if next_val[0] != values[0] else int(next_val[2]-1)
                 except:
                     last_byte_plus = int(storage.head_object(BUCKET_NAME, fasta_file_path)['content-length']) - 1
                 iterdata.append({'fasta_chunk': {'key_fasta': fasta_file_path, 'key_index': fasta_index, 'id': values[0], 'offset_head': int(values[1]),
                                     'offset_base':  int(values[2]), 'length': int(values[3]), 'last_byte+': last_byte_plus}, 'fastq_chunk': fastq_key})
+
+        if iterdata_n is not None:
+            iterdata = iterdata[0:int(iterdata_n)]
+            print("returning first" + str(iterdata_n) + " elements")
+        else:
+            print("returning all iterdata elements")
+        print("end of *create_iterdata_from_info_files* function - single end sequencing")
     except:
         print("Error creating iterdata") 
-        ## Added, Only N chunks for testing purposes
-        # counter += 1
-        #if counter >= (num_chunks - 1):
-        #    break
-        ## ## ## ## ##
-    if iterdata_n is not None:
-        print("iterdata subset elements to be parsed: " + str(iterdata_n))
-        iterdata = iterdata[0:int(iterdata_n)]
-        print("returning first" + str(iterdata_n) + " elements")
-        print("end of *create_iterdata_from_info_files* function - single end sequencing")
-        return iterdata, len(data_index), num_chunks
-    else:
-        print("returning all iterdata elements")
-        #print(str(iterdata))
-        print("end of *create_iterdata_from_info_files* function - single end sequencing")
-        return iterdata, len(data_index), num_chunks
+    
+    return iterdata, len(data_index), num_chunks
+    
 
 def prepare_fastq(cloud_adr, BUCKET_NAME, idx_folder, fastq_folder, fastq_chunk_size, seq_type, fastq_file, seq_name,datasource,num_spots, fastq_file2=None):
     print("Creating fastq index files if they are not present")

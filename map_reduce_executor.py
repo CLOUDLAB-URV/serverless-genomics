@@ -245,23 +245,34 @@ class MapReduce:
 
 
     def delete_objects(self, storage, bucket, file_format):
+        """
+        Delete all objects with a given prefix inside a bucket
+        """
         keys = storage.list_keys(bucket=bucket, prefix=file_format+"/")
         storage.delete_objects(bucket=bucket, key_list=keys)
 
 
-    def index_correction_map(id, setname, bucket, storage):  
+    def index_correction_map(self, setname, bucket, storage):  
+        """
+        Corrects the index after the first map iteration. 
+        All the set files must have the prefix "map_index_files/".
+        Corrected indices will be stored with the prefix "correctedIndex/".
+        """
+        # Download all files related to this set
         filelist = storage.list_keys(bucket, "map_index_files/"+setname)
         for file in filelist:
             local_file = file.split("/")[-1]
             storage.download_file(bucket, file, '/tmp/'+local_file)
-        
+        print(len(filelist))    
+        # Execute correction scripts
         cmd = f'/function/bin/binary_reducer.sh /function/bin/merge_gem_alignment_metrics.sh 4 /tmp/{setname}* > /tmp/{setname}.intermediate.txt'
         result1 = sp.run(cmd, shell=True, check=True, universal_newlines=True)
         cmd2 = f'/function/bin/filter_merged_index.sh /tmp/{setname}.intermediate.txt /tmp/{setname}'
         result2 = sp.run(cmd2, shell=True, check=True, universal_newlines=True)
         
+        # Upload corrected index to storage
         storage.upload_file('/tmp/'+setname+'.txt', bucket, 'correctedIndex/'+setname+'.txt')
-        return 0
+        return 0 
     
     
     def __init__(self, map_func, map_func2, reduce_func, create_sinple_key, runtime, runtime_memory, runtime_memory_r, buffer_size, file_format, func_timeout_map, func_timeout_reduce,log_level, bucket, stage, id, debug, skip_map, workers, method, fastq_set_n, run_id, iterdata_n, num_chunks, fq_seqname):
@@ -293,94 +304,83 @@ class MapReduce:
         
 
 
-    def __call__(self, iterdata, iterdata_sets):
-        # if len(iterdata) > 100:
-        #     iterdata = iterdata[0:50]
+    def __call__(self, iterdata):  
         
-
+        iterdata = iterdata[0:2] # TODO remove
+        
         storage = Storage()
         s3 = storage.storage_handler.s3_client
-
-        # log_level=self.log_level
         fexec = lithops.FunctionExecutor(log_level=self.log_level, runtime=self.runtime, runtime_memory=self.runtime_memory)
 
         if self.skip_map == "False":
+            # Delete old files
             print("Deleting previous mapper outputs...")
             self.delete_objects(storage, self.bucket, self.file_format)
 
         print("Running Map Phase... " + str(len(iterdata)) + " functions")
-
-        # fexec.map(self.map_func, iterdata, timeout=self.func_timeout_map)
-        # first_map_results = fexec.get_result()
-        # with open('../first_map_results.txt', 'w') as f:
-        #         f.write(str(first_map_results))
-        # print(first_map_results)
-        # exit()
-        
+       
+        # Initizalize execution debug info
         stage="A"
         id="X"
         start = time.time()
         map_results=[]
+        
         if self.skip_map == "False":
-            if not iterdata_sets:
-                print("map phase - single iterdata set")
-                
-                # Start first part of map
-                fexec.map(self.map_func, iterdata, timeout=self.func_timeout_map)
-                first_map_results = fexec.get_result()
-                # Generate index correction iterdata
-                index_iterdata = []
-                for i in range(self.num_chunks):
-                    index_iterdata.append({'setname': self.fq_seqname+'_fq'+str(i+1), 'bucket': str(self.bucket)})
-                
-                # Index correction
-                fexec.map(self.index_correction_map, index_iterdata, timeout=self.func_timeout_map)
-                corrections_results = fexec.get_result()
-                
-                # Generate new iterdata
-                newiterdata = []
-                for worker in first_map_results:
-                    newiterdata.append({
-                        'fasta_chunk': worker[0],
-                        'fastq_chunk': worker[1],
-                        'corrected_map_index_file': worker[2].split("-")[0]+".txt",
-                        'filtered_map_file': worker[3],
-                        'base_name': worker[4],
-                        'gem_index_present': worker[5],
-                        'old_id': worker[6]
-                    })
-                
-                # Execute second part of map
-                fexec.map(self.map_func2, newiterdata, timeout=2400)
-                
-                # Results
-                map_results = fexec.get_result()
-                fexec.plot()
-            else:
-                print("map phase - iterdata with "+str(len(iterdata_sets))+" sets")
-                count=0
-                for iterdata in iterdata_sets:
-                    count+=1
-                    fexec.map(self.map_func, iterdata, timeout=2400)
-                    print("map phase - finished iterdata set no. "+str(count)+" with "+str(len(iterdata))+" elements")
-                    print("getting results")
-                    map_results_part = fexec.get_result()
-                    fexec.plot()
-                    print("appending partial results to map results")
-                    for el in map_results_part:
-                        map_results.append(el)
+            ###################################################################
+            #### MAP: STAGE 1
+            ###################################################################
+            print("map phase - single iterdata set")
+            
+            # Start first part of map
+            fexec.map(self.map_func, iterdata, timeout=self.func_timeout_map)
+            first_map_results = fexec.get_result()
+
+            ###################################################################
+            #### MAP: GENERATE CORRECTED INDEXES
+            ###################################################################
+            # Generate the iterdata for index correction
+            index_iterdata = []
+            for i in range(self.num_chunks):
+                index_iterdata.append({'setname': self.fq_seqname+'_fq'+str(i+1), 'bucket': str(self.bucket)})
+
+            # Index correction
+            fexec.map(self.index_correction_map, index_iterdata, timeout=self.func_timeout_map)
+            corrections_results = fexec.get_result()         
+            ###################################################################
+            #### MAP: STAGE 2
+            ###################################################################
+            # Generate new iterdata
+            newiterdata = []
+            for worker in first_map_results:
+                newiterdata.append({
+                    'fasta_chunk': worker[0],
+                    'fastq_chunk': worker[1],
+                    'corrected_map_index_file': worker[2].split("-")[0]+".txt",
+                    'filtered_map_file': worker[3],
+                    'base_name': worker[4],
+                'old_id': worker[5]
+                })
+            
+            # Execute second stage of map
+            fexec.map(self.map_func2, newiterdata, timeout=self.func_timeout_map)
+            
+            # Results
+            map_results = fexec.get_result()
+            return map_results[0], 0,0,0 #TODO
+            fexec.plot()
                     
-        else:
+        else:   # Skip map and get keys from previous run
             print("skipping map phase and retrieving existing keys")
             map_results = storage.list_keys(self.bucket, prefix="csv/")
             
+
         #Delete intermediate files
         keys = storage.list_keys(self.bucket, "map_index_files/")
         for key in keys:
             storage.delete_object(self.bucket, key)
-        #keys = storage.list_keys(self.bucket, "correctedIndex/")
-        #for key in keys:
-        #    storage.delete_object(self.bucket, key)
+        keys = storage.list_keys(self.bucket, "correctedIndex/")
+        for key in keys:
+            storage.delete_object(self.bucket, key)
         keys = storage.list_keys(self.bucket, "filtered_map_files/")
         for key in keys:
             storage.delete_object(self.bucket, key)
@@ -395,8 +395,8 @@ class MapReduce:
         print('map: s3: cost:'+ str(pEst.s3_calc_multiple_fexec(20)))
         print("Map Phase Finished...")
 
-        return map_time, 0, 0, 0 # Skip reduce for testing purposes
-
+                
+        return map_time, 0, 0, 0  # TODO remove
         #--------------------------------------------------------------------------
         # REDUCE STAGE 1
         print("Reduce stage 1: Creating Intermediate Keys and mpileup index ranges...")
@@ -484,7 +484,7 @@ class MapReduce:
                 #print(x)
 
         
-        
+
         #--------------------------------------------------------------------------
 
         
