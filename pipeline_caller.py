@@ -32,7 +32,7 @@ class PipelineCaller:
         if iterdata_n is not None or iterdata_n == "all": 
             iterdata = iterdata[0:int(iterdata_n)]
             if(len(iterdata)%len(list_fasta)!=0):
-                raise Exception("If ")
+                raise Exception("Number of elements in iterdata must be multiple of the number of fasta chunks.")
             else: 
                 num_chunks = len(iterdata)//len(list_fasta)
 
