@@ -18,12 +18,12 @@ from random import randint
 import Metadata
 import fastq_functions as fq_func
 import fasta_functions as fa_func
+from varcall_arguments import Arguments
+from pipeline_caller import PipelineCaller
 
 # map/reduce functions and executor
 from map_reduce_executor import MapReduce
 from map_functions import MapFunctions
-
-CWD = os.getcwd()
 
 ###################################################################
 #### PIPELINE SETTINGS
@@ -99,8 +99,8 @@ fasta_file = args.fasta
 
 # Cloud Storage Settings
 cloud_adr = parse_optional_arg(args.cloud_adr, "aws")
-BUCKET_NAME = args.bucket
-FASTA_BUCKET = parse_optional_arg(args.fbucket, BUCKET_NAME)
+bucket = args.bucket
+fasta_bucket = parse_optional_arg(args.fbucket, bucket)
 
 # Fastq data source (SRA)
 datasource = parse_optional_arg(args.data_source, "s3")
@@ -146,167 +146,13 @@ idx_folder = "fastq-indexes/"
 out_folder = "outputs/"
 s3_temp_folder = "temp_outputs/"
 
-
-def generate_alignment_iterdata(list_fastq, list_fasta, iterdata_n):
-    """
-    Creates the lithops iterdata from the fasta and fastq chunk lists
-    """
-    os.chdir(CWD)
-    iterdata = []
-    
-    # Number of fastq chunks processed. If doing a partial execution, iterdata_n will need to be multiple of the number of fasta chunks
-    # so the index correction is done properly.
-    num_chunks = 0  
-    
-    # Generate iterdata
-    for fastq_key in list_fastq:
-        num_chunks += 1
-        for fasta_key in list_fasta:
-            iterdata.append({'fasta_chunk': fasta_key, 'fastq_chunk': fastq_key})
-
-    # Limit the length of iterdata if iterdata_n is not null.
-    if iterdata_n is not None: 
-        iterdata = iterdata[0:int(iterdata_n)]
-        if(len(iterdata)%len(list_fasta)!=0):
-            raise Exception("Hola")
-        else: 
-            num_chunks = len(iterdata)//len(list_fasta)
-
-    return iterdata, num_chunks
- 
+arguments = Arguments(fq_seqname, fastq_file, fastq_file2, seq_type, fasta_file, cloud_adr, bucket, fasta_bucket, 
+                          datasource, fastq_read_n, fastq_chunk_size, fasta_chunk_size, fasta_char_overlap, tolerance, 
+                          file_format, iterdata_n, function_n, concur_fun, temp_to_s3, runtime_id, runtime_mem, runtime_mem_r, 
+                          runtime_storage, buffer_size, func_timeout_map, func_timeout_reduce, skip_map, lb_method, gem_test, 
+                          pre_processing_only, debug, fasta_folder, fastq_folder, split_fasta_folder, idx_folder, out_folder, 
+                          s3_temp_folder)
  
 if __name__ == "__main__":
-    ###################################################################
-    #### START THE PIPELINE
-    ###################################################################
-    run_id=str(randint(1000,9999))
-    stage="PP"  
-    id="X"      # this is for function id, which is not present in this case
-    
-    PP_start = time.time()
-
-    # Run settings summary
-    print("Variant Caller - Cloudbutton Genomics Use Case demo")
-    print("starting pipeline at "+ str(time.time()) + " - " + str(time.strftime("%a, %d %b %Y %H:%M:%S +0000", time.gmtime())))
-    
-    print("run id: "+run_id)
-    
-    print("RUN SETTINGS")
-    print("command line: ")
-    print(sys.argv[0]+str(sys.argv))
-    print("\nBucket name: %s\n" % BUCKET_NAME )
-    print("Sequencing type: " + seq_type + "\n")
-
-    print("INPUT FILES")
-    print("Fastq file 1: %s" % fastq_file )
-    print("Fastq file 2: %s" % fastq_file2 )
-    print("Fasta file: %s" % fasta_file )
-
-    print("\nFILE SPLITTING SETTINGS")
-    print("Fastq chunk size: %s lines" % str(fastq_chunk_size) )
-    print("Fasta chunk size: %s characters" % str(fasta_chunk_size) )
-    print("Fasta overlap size: %s characters" % str(fasta_char_overlap) )
-
-    print("\nOTHER RUN SETTINGS")
-    if function_n == "all":
-        print("Number of functions spawned: %s" % function_n )
-    else:
-        print("Number of functions spawned: %s" % iterdata_n )
-    print("Runtime used: %s" % runtime_id )
-    print("Runtime memory - map function: %s" % runtime_mem )
-    print("Runtime memory - reduce function: %s" % runtime_mem_r )
-    print("Runtime storage - map function: %s" % runtime_storage )
-    print("Reduce load balancer method: %s" % lb_method )
-    print("############\n")
-
-
-    ###################################################################
-    #### 1. GENERATE LIST OF FASTQ CHUNKS (BYTE RANGES)
-    ###################################################################
-    t0 = time.time()
-
-    num_spots = 0
-    metadata = Metadata.SraMetadata()
-    arr_seqs = [fq_seqname]
-    if datasource == "SRA":
-        accession = metadata.efetch_sra_from_accessions(arr_seqs)
-        seq_type = accession['pairing'].to_string(index=False)
-        num_spots = accession['spots'].to_string(index=False)
-        fastq_size = accession['run_size'].to_string(index=False)
-        print("Retrieving data from sra...")
-        print("Sequence type: " + seq_type)
-        print("Number of spots: " + num_spots)
-        print("fastq size: " + fastq_size)
-
-    # Generate fastq chunks
-    fastq_list = fq_func.prepare_fastq(fastq_read_n, fq_seqname, num_spots)
-
-    t1 = time.time()
-    print(f'PP:0: fastq list: execution_time: {t1 - t0}: s')
-
-
-    ###################################################################
-    #### 2. GENERATE LIST OF FASTA CHUNKS (if not present)
-    ###################################################################
-    t2 = time.time()
-
-    # Fasta File Chunk Prefix:
-    # the prefix contains the name of the fasta reference minus the suffix,
-    # followed by block length and then "_split_" i.e. for hg19.fa
-    # with chunks with block length of 400000 it would be hg19_400000_split_
-    fasta_chunks_prefix = re.sub("\.fasta|\.fa|\.fas", "_" + str(fasta_chunk_size) + "split_", fasta_file)
-    
-    # Generate fasta chunks
-    fasta_list = fa_func.prepare_fasta(cloud_adr, runtime_id, FASTA_BUCKET, fasta_folder, fasta_file, split_fasta_folder, fasta_chunk_size, fasta_chunks_prefix, fasta_char_overlap)
-    
-    t3 = time.time()
-    print(f'PP:0: fasta list: execution_time: {t3 - t2}: s')
-
-    
-    ###################################################################
-    #### 3. GENERATE ITERDATA
-    ###################################################################
-    # The iterdata consists of an array where each element is a pair of a fastq chunk and a fasta chunk.
-    # Since each fastq chunk needs to be paired with each fasta chunk, the total number of elements in
-    # iterdata will be n_fastq_chunks * n_fasta_chunks.
-    
-    print("\nGenerating iterdata")
-    t4 = time.time()
-    
-    # Generate iterdata
-    iterdata, num_chunks = generate_alignment_iterdata(fastq_list, fasta_list, iterdata_n)
-    
-    iterdata_n=len(iterdata)
-    fastq_set_n=len(fasta_list) # number of fastq files aligned to each fasta chunk.
-    
-    
-    ###################################################################
-    #### 4. PREPROCESSING SUMMARY
-    ###################################################################
-    print("\nITERDATA LIST")
-    print("number of fasta chunks: " + str(fastq_set_n))
-    print("number of fastq chunks: " + str(len(fastq_list)))
-    print("fasta x fastq chunks: "+ str(len(fasta_list)*len(fastq_list)))
-    print("number of iterdata elements: " + str(iterdata_n))
-    PP_end = time.time()
-    print(f'PP:0: preprocessing: execution_time: {PP_end - PP_start}: s')
-
-
-    if pre_processing_only==False:
-        ###################################################################
-        #### 5. MAP-REDUCE
-        ###################################################################
-        stage="MR"
-        id=0
-        
-        mapfunc = MapFunctions(fq_seqname, datasource, seq_type, debug, BUCKET_NAME, fastq_folder, idx_folder, fasta_chunks_prefix, FASTA_BUCKET, stage, file_format, tolerance)
-
-        mapreduce = MapReduce(mapfunc, runtime_id, runtime_mem, runtime_mem_r, buffer_size, file_format, func_timeout_map, func_timeout_reduce, 'DEBUG', BUCKET_NAME, stage, id, debug, skip_map, lb_method, iterdata_n, num_chunks, fq_seqname)
-        map_time = mapreduce(iterdata)
-
-        
-        ###################################################################
-        #### 6. MAP-REDUCE SUMMARY
-        ###################################################################
-        print("MAP-REDUCE SUMMARY")
-        print("map phase: execution_time_total_varcall: "+str(map_time)+"s")
+    pipeline = PipelineCaller()
+    pipeline(arguments)
