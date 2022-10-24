@@ -1,29 +1,20 @@
-import os.path
+import os
 import re
-from random import randint
 import multiprocessing
 import subprocess as sp
+from typing import Tuple
 import pandas as pd
 from numpy import int64
 import fastq_functions as fq_func
 import aux_functions as aux
+from varcall_arguments import Arguments
+from lithops import Storage
 
 
-class MapFunctions:
-    def __init__(self, fq_seqname, datasource, seq_type, debug, BUCKET_NAME, fastq_folder, idx_folder,
-                  fasta_chunks_prefix, FASTA_BUCKET, stage, file_format, tolerance):
-        self.fq_seqname = fq_seqname
-        self.datasource = datasource
-        self.seq_type = seq_type
-        self.debug = debug
-        self.BUCKET_NAME = BUCKET_NAME
-        self.fastq_folder = fastq_folder
-        self.idx_folder = idx_folder
+class AlignmentMapper:
+    def __init__(self, fasta_chunks_prefix: str, args: Arguments):
         self.fasta_chunks_prefix = fasta_chunks_prefix
-        self.FASTA_BUCKET = FASTA_BUCKET
-        self.stage = stage 
-        self.file_format = file_format
-        self.tolerance = tolerance
+        self.args = args
     
     ###################################################################
     ###################################################################
@@ -31,7 +22,7 @@ class MapFunctions:
     ###################################################################
     ###################################################################
 
-    def map_alignment1(self, id, fasta_chunk, fastq_chunk, storage):
+    def map_alignment1(self, id: int, fasta_chunk: str, fastq_chunk: str, storage: Storage):
         """
         First map function to filter and map fasta + fastq chunks. Some intermediate files
         are uploaded into the cloud storage for subsequent index correction, after which
@@ -39,10 +30,9 @@ class MapFunctions:
         """
         
         # CONTROL VARIABLES 
-        stage="A"+str(randint(1000,9999))
         fasta_n=re.sub(r'^\S*split_0*(\d*)\S*fasta', r'\1', fasta_chunk)
         fastq_n=re.sub('^[\s|\S]*number\':\s(\d*),[\s|\S]*$', r"\1", str(fastq_chunk))
-        func_key=self.fq_seqname+"_fq"+fastq_n+"-fa"+fasta_n
+        func_key=self.args.fq_seqname+"_fq"+fastq_n+"-fa"+fasta_n
         
         ###################################################################
         #### PROCESSING FASTQ CHUNKS
@@ -50,13 +40,13 @@ class MapFunctions:
         # Download fastq chunk depending on source
         fastq1 =""
         fastq2 =""
-        fastq1, fastq2, base_name = self.download_fastq(id, stage, fastq_chunk)
+        fastq1, fastq2, base_name = self.download_fastq(fastq_chunk)
         
         ###################################################################
         #### PROCESSING FASTA CHUNKS
         ###################################################################
         fasta_chunk_folder_file = fasta_chunk.split("/")
-        fasta = aux.copy_to_runtime(storage, self.FASTA_BUCKET, fasta_chunk_folder_file[0]+"/", fasta_chunk_folder_file[1])
+        fasta = aux.copy_to_runtime(storage, self.args.fasta_bucket, fasta_chunk_folder_file[0]+"/", fasta_chunk_folder_file[1])
         gem_ref_nosuffix = os.path.splitext(fasta)[0]
         gem_ref = gem_ref_nosuffix + '.gem'
         cpus=multiprocessing.cpu_count()
@@ -66,7 +56,7 @@ class MapFunctions:
         ###################################################################
         #### GENERATE ALIGNMENT AND ALIGNMENT INDEX (FASTQ TO MAP)
         ###################################################################
-        sp.run(['/function/bin/map_index_and_filter_map_file_cmd_awsruntime.sh', gem_ref, fastq1, fastq2, base_name, self.datasource, self.seq_type], capture_output=True)
+        sp.run(['/function/bin/map_index_and_filter_map_file_cmd_awsruntime.sh', gem_ref, fastq1, fastq2, base_name, self.args.datasource, self.args.seq_type], capture_output=True)
 
         # Reorganize file names
         map_index_file = base_name + "_map.index.txt"
@@ -77,15 +67,15 @@ class MapFunctions:
         os.rename(old_filtered_map_file, filtered_map_file)
         
         # Copy intermediate files to storage for index correction
-        map_index_file = aux.copy_to_s3(storage, self.BUCKET_NAME, map_index_file, True, 'map_index_files/')
-        filtered_map_file = aux.copy_to_s3(storage, self.BUCKET_NAME, filtered_map_file, True, 'filtered_map_files/')
+        map_index_file = aux.copy_to_s3(storage, self.args.bucket, map_index_file, True, 'map_index_files/')
+        filtered_map_file = aux.copy_to_s3(storage, self.args.bucket, filtered_map_file, True, 'filtered_map_files/')
         map_index_file = map_index_file.replace("map_index_files/", "")
         filtered_map_file = filtered_map_file.replace("filtered_map_files/", "")
                 
         return fasta_chunk, fastq_chunk, map_index_file, filtered_map_file, base_name, id
 
 
-    def map_alignment2(self, old_id, fasta_chunk, fastq_chunk, corrected_map_index_file, filtered_map_file, base_name, storage):
+    def map_alignment2(self, old_id: int, fasta_chunk: str, fastq_chunk: str, corrected_map_index_file: str, filtered_map_file: str, base_name: str, storage: Storage):
         """
         Second map  function, executed after the previous map function (map_alignment1) and the index correction.
         """
@@ -93,19 +83,17 @@ class MapFunctions:
         ###################################################################
         #### RECOVER DATA FROM PREVIOUS MAP
         ###################################################################
-        fasta_n=re.sub(r'^\S*split_0*(\d*)\S*fasta', r'\1', fasta_chunk)
-        fastq_n=re.sub('^[\s|\S]*number\':\s(\d*),[\s|\S]*$', r"\1", str(fastq_chunk))
-        aux.copy_to_runtime(storage, self.BUCKET_NAME, 'correctedIndex/', corrected_map_index_file)
-        aux.copy_to_runtime(storage, self.BUCKET_NAME, 'filtered_map_files/', filtered_map_file)
+        aux.copy_to_runtime(storage, self.args.bucket, 'correctedIndex/', corrected_map_index_file)
+        aux.copy_to_runtime(storage, self.args.bucket, 'filtered_map_files/', filtered_map_file)
         corrected_map_index_file = "/tmp/" + corrected_map_index_file
         filtered_map_file = "/tmp/" + filtered_map_file
         fasta_chunk_folder_file = fasta_chunk.split("/")
-        fasta = aux.copy_to_runtime(storage, self.FASTA_BUCKET, fasta_chunk_folder_file[0]+"/", fasta_chunk_folder_file[1]) # Download fasta chunk
+        fasta = aux.copy_to_runtime(storage, self.args.fasta_bucket, fasta_chunk_folder_file[0]+"/", fasta_chunk_folder_file[1]) # Download fasta chunk
         
         ###################################################################
         #### FILTER ALIGNMENTS (CORRECT .map FILE)
         ###################################################################
-        map_filtering_output = sp.run(['/function/bin/map_file_index_correction.sh', corrected_map_index_file, filtered_map_file, str(self.tolerance)], capture_output=True)  # change to _v3.sh and runtime 20
+        map_filtering_output = sp.run(['/function/bin/map_file_index_correction.sh', corrected_map_index_file, filtered_map_file, str(self.args.tolerance)], capture_output=True)  # change to _v3.sh and runtime 20
         corrected_map_file = base_name + "_" + str(old_id) + "_filt_wline_no_corrected.map"
 
         ###################################################################
@@ -117,7 +105,7 @@ class MapFunctions:
         ###################################################################
         #### CONVERT MPILEUP TO PARQUET / CSV
         ###################################################################
-        format_key, text_key = self.mpileup_conversion(mpileup_file, fasta_chunk, self.fasta_chunks_prefix, fastq_chunk, self.file_format, self.BUCKET_NAME, storage)
+        format_key, text_key = self.mpileup_conversion(mpileup_file, fasta_chunk, fastq_chunk, storage)
         
         return format_key, text_key
         
@@ -128,11 +116,11 @@ class MapFunctions:
     ###################################################################
     ###################################################################
     
-    def download_fastq(self, id, stage, fastq_chunk):
+    def download_fastq(self, fastq_chunk) -> Tuple[str, str, str]:
         """
         Download fastq chunks depending on source
         """   
-        if self.seq_type == "paired-end":
+        if self.args.seq_type == "paired-end":
             fastq1 = fq_func.fastq_to_mapfun(fastq_chunk[0], fastq_chunk[1])
             base_name = os.path.splitext(fastq1)[0] #+'.pe'
             fastq2 = "yes"
@@ -143,7 +131,7 @@ class MapFunctions:
         return fastq1, fastq2, base_name
     
     
-    def mpileup_conversion(self, mpileup_file, fasta_chunk, fasta_key, fastq_chunk, file_format, BUCKET_NAME, storage):
+    def mpileup_conversion(self, mpileup_file: str, fasta_chunk: str, fastq_chunk: str, storage: Storage) -> Tuple [str, str]:
         """
         Convert resulting data to csv/parquet and txt
         """
@@ -161,6 +149,7 @@ class MapFunctions:
         df['1'] = df['1'].astype(int64)
 
         # Remove disallowed characters
+        fasta_key = self.fasta_chunks_prefix
         disallowed_characters = "._-!/·¡"
         for character in disallowed_characters:
             fasta_key = fasta_key.replace(character,"")
@@ -168,7 +157,7 @@ class MapFunctions:
         # Create intermediate key
         fasta_chunk = fasta_chunk.split("_")
         max_index = df.iloc[-1]['1']
-        intermediate_key = file_format + "/" + fasta_key + "_" + fasta_chunk[-1] + "-" + fastq_chunk[0] + "_chunk" + str(fastq_chunk[1]["number"]) + "_" + str(max_index)
+        intermediate_key = self.args.file_format + "/" + fasta_key + "_" + fasta_chunk[-1] + "-" + fastq_chunk[0] + "_chunk" + str(fastq_chunk[1]["number"]) + "_" + str(max_index)
         
         range_index = []
         x = 0
@@ -186,17 +175,17 @@ class MapFunctions:
             content = content + str(range_index[i+1]) + ":" + str(df3.iloc[i,0]) + "\n"
             
         # Upload .txt file to storage
-        storage.put_object(bucket=BUCKET_NAME, key=intermediate_key + ".txt", body=content)
+        storage.put_object(bucket=self.args.bucket, key=intermediate_key + ".txt", body=content)
         
         # Write the mpileup file to the tmp directory
-        if file_format=="csv":
+        if self.args.file_format=="csv":
             df.to_csv(mpileup_file+".csv", index=False, header=False)
             with open(mpileup_file+".csv", 'rb') as f:
-                storage.put_object(bucket=BUCKET_NAME, key=intermediate_key + ".csv", body=f)
+                storage.put_object(bucket=self.args.bucket, key=intermediate_key + ".csv", body=f)
             
-        elif file_format=="parquet":
+        elif self.args.file_format=="parquet":
             df.to_parquet(mpileup_file+".parquet")
             with open(mpileup_file+".parquet", 'rb') as f:
-                storage.put_object(bucket=BUCKET_NAME, key=intermediate_key + ".parquet", body=f)
+                storage.put_object(bucket=self.args.bucket, key=intermediate_key + ".parquet", body=f)
         
-        return [intermediate_key+"."+file_format, intermediate_key+".txt"]
+        return [intermediate_key+"."+self.args.file_format, intermediate_key+".txt"]

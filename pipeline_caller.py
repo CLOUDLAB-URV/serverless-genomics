@@ -1,20 +1,18 @@
-import argparse
-import os.path
 import time
 import re
 import sys
 from random import randint
-import Metadata
+import metadata as Metadata
 import fastq_functions as fq_func
 import fasta_functions as fa_func
 from varcall_arguments import Arguments
 
 # map/reduce functions and executor
-from map_reduce_executor import MapReduce
-from map_functions import MapFunctions
+import map_reduce_caller as map_reduce
+from alignment_mapper import AlignmentMapper
 
 class PipelineCaller:
-    def generate_alignment_iterdata(self, list_fastq, list_fasta, iterdata_n):
+    def generate_alignment_iterdata(self, list_fastq: list, list_fasta: list, iterdata_n):
         """
         Creates the lithops iterdata from the fasta and fastq chunk lists
         """
@@ -45,10 +43,8 @@ class PipelineCaller:
         #### START THE PIPELINE
         ###################################################################
         run_id=str(randint(1000,9999))
-        stage="PP"  
-        id="X"      # this is for function id, which is not present in this case
         
-        PP_start = time.time()
+        pp_start = time.time()
 
         # Run settings summary
         print("Variant Caller - Cloudbutton Genomics Use Case demo")
@@ -89,7 +85,7 @@ class PipelineCaller:
         #### 1. GENERATE LIST OF FASTQ CHUNKS (BYTE RANGES)
         ###################################################################
         t0 = time.time()
-
+        
         num_spots = 0
         metadata = Metadata.SraMetadata()
         arr_seqs = [args.fq_seqname]
@@ -122,7 +118,7 @@ class PipelineCaller:
         fasta_chunks_prefix = re.sub("\.fasta|\.fa|\.fas", "_" + str(args.fasta_chunk_size) + "split_", args.fasta_file)
         
         # Generate fasta chunks
-        fasta_list = fa_func.prepare_fasta(args.cloud_adr, args.runtime_id, args.fasta_bucket, args.fasta_folder, args.fasta_file, args.split_fasta_folder, args.fasta_chunk_size, fasta_chunks_prefix, args.fasta_char_overlap)
+        fasta_list = fa_func.prepare_fasta(args, fasta_chunks_prefix)
         
         t3 = time.time()
         print(f'PP:0: fasta list: execution_time: {t3 - t2}: s')
@@ -134,9 +130,7 @@ class PipelineCaller:
         # The iterdata consists of an array where each element is a pair of a fastq chunk and a fasta chunk.
         # Since each fastq chunk needs to be paired with each fasta chunk, the total number of elements in
         # iterdata will be n_fastq_chunks * n_fasta_chunks.
-        
         print("\nGenerating iterdata")
-        t4 = time.time()
         
         # Generate iterdata
         iterdata, num_chunks = self.generate_alignment_iterdata(fastq_list, fasta_list, args.iterdata_n)
@@ -153,22 +147,16 @@ class PipelineCaller:
         print("number of fastq chunks: " + str(len(fastq_list)))
         print("fasta x fastq chunks: "+ str(len(fasta_list)*len(fastq_list)))
         print("number of iterdata elements: " + str(iterdata_n))
-        PP_end = time.time()
-        print(f'PP:0: preprocessing: execution_time: {PP_end - PP_start}: s')
+        pp_end = time.time()
+        print(f'PP:0: preprocessing: execution_time: {pp_end - pp_start}: s')
 
 
         if args.pre_processing_only==False:
             ###################################################################
             #### 5. MAP-REDUCE
             ###################################################################
-            stage="MR"
-            id=0
-            
-            mapfunc = MapFunctions(args.fq_seqname, args.datasource, seq_type, args.debug, args.bucket, args.fastq_folder, args.idx_folder, fasta_chunks_prefix, args.fasta_bucket, stage, args.file_format, args.tolerance)
-
-            mapreduce = MapReduce(mapfunc, args.runtime_id, args.runtime_mem, args.runtime_mem_r, args.buffer_size, args.file_format, args.func_timeout_map, args.func_timeout_reduce, 'DEBUG', args.bucket, stage, id, args.debug, args.skip_map, args.lb_method, iterdata_n, num_chunks, args.fq_seqname)
-            map_time = mapreduce(iterdata)
-
+            mapfunc = AlignmentMapper(fasta_chunks_prefix, args)
+            map_time = map_reduce.map_reduce(args, iterdata, mapfunc, num_chunks)
             
             ###################################################################
             #### 6. MAP-REDUCE SUMMARY

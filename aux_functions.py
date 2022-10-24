@@ -1,16 +1,8 @@
 import shutil
 import os
-import re
-import time
-import subprocess as sp
-import pathlib
-import tempfile
+from lithops import Storage
 
-CURRENT_PATH = str(pathlib.Path(__file__).parent.resolve())
-LOCAL_TMP = os.path.realpath(tempfile.gettempdir())
-
-
-def copy_to_runtime(storage, bucket, folder, file_name, byte_range=None):
+def copy_to_runtime(storage: Storage, bucket: str, folder: str, file_name: str, byte_range=None):
     """
     Copy file from S3 to local storage.
     """
@@ -22,7 +14,7 @@ def copy_to_runtime(storage, bucket, folder, file_name, byte_range=None):
     return temp_file
 
 
-def copy_to_s3(storage, BUCKET_NAME, file_name, temp_to_s3, folder_name=""):
+def copy_to_s3(storage: Storage, bucket: str, file_name: str, temp_to_s3: bool, folder_name: str = "") -> str:
     """
     Copy file from local storage to S3.
     """
@@ -31,6 +23,6 @@ def copy_to_s3(storage, BUCKET_NAME, file_name, temp_to_s3, folder_name=""):
 
         with open(file_name, 'rb') as file:
             data = file.read()
-            storage.put_object(BUCKET_NAME, destination_key, body=data)
+            storage.put_object(bucket, destination_key, body=data)
         return destination_key
-    return 0
+    return ""

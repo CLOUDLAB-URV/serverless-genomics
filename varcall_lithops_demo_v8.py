@@ -10,20 +10,8 @@ REMAINING THINGS TO DO:
 """
 
 import argparse
-import os.path
-import time
-import re
-import sys
-from random import randint
-import Metadata
-import fastq_functions as fq_func
-import fasta_functions as fa_func
 from varcall_arguments import Arguments
 from pipeline_caller import PipelineCaller
-
-# map/reduce functions and executor
-from map_reduce_executor import MapReduce
-from map_functions import MapFunctions
 
 ###################################################################
 #### PIPELINE SETTINGS
