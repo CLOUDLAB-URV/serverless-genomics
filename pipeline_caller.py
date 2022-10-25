@@ -38,7 +38,7 @@ class PipelineCaller:
 
         return iterdata, num_chunks
     
-    def __call__(self, args: Arguments):
+    def execute_pipeline(self, args: Arguments):
         ###################################################################
         #### START THE PIPELINE
         ###################################################################

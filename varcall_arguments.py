@@ -2,58 +2,65 @@ from dataclasses import dataclass
 from re import I
 
 @dataclass
-class Arguments:
-    # FastQ names
-    fq_seqname: str
-    fastq_file: str
-    
-    # From input, determine whether it is paired- or single-end sequencing
-    fastq_file2: str
-    seq_type: str
+class Arguments():
+    ###################################################################
+    #### MANDATORY VARIABLES
+    ###################################################################
     fasta_file: str
-    
-    # Cloud Storage Settings
-    cloud_adr: str
     bucket: str
     fasta_bucket: str
+    fasta_chunk_size: int
+    fastq_chunk_size: int
+    seq_type: str
+    
+    ###################################################################
+    #### OPTIONAL VARIABLES
+    ###################################################################
+    # FastQ names
+    fq_seqname : str = None
+    fastq_file: str = ""
+    
+    # From input, determine whether it is paired- or single-end sequencing
+    fastq_file2: str = ""
+    
+    # Cloud Storage Settings
+    cloud_adr: str = "aws"
     
     # Fastq data source (SRA)
-    datasource: str
+    datasource: str = "s3"
     
     # File Splitting Parameters
-    fastq_read_n: int
-    fastq_chunk_size: int
-    fasta_chunk_size: int
-    fasta_char_overlap: int
+    fastq_read_n: int = None
+    fasta_char_overlap: int = 300
     
     # Pipeline-Specific Parameters
-    tolerance: int
-    file_format: str
+    tolerance: int = 0
+    file_format: str = "parquet"
     
     # Run Settings
-    iterdata_n: ...
-    function_n: ...
-    concur_fun: int
-    temp_to_s3: bool
-    runtime_id: str
-    runtime_mem: int
-    runtime_mem_r: int
-    runtime_storage: int
-    buffer_size: int
-    func_timeout_map: int
-    func_timeout_reduce: int
-    skip_map: bool
-    lb_method: str
+    iterdata_n: ... = None
+    function_n: ... = "All"
+    concur_fun: int = 10000
+    temp_to_s3: bool = False
+    runtime_id: str = 'lumimar/hutton-genomics-v03:18'
+    runtime_mem: int = 1024
+    runtime_mem_r: int = 4096
+    runtime_storage: int = 4000
+    buffer_size: int = "75%"
+    func_timeout_map: int = 2400
+    func_timeout_reduce: int = 2400
+    skip_map: bool = False
+    lb_method: str = "select"
     
     # DEBUGGING SETTINGS
-    gem_test: bool
-    pre_processing_only: bool
-    debug: bool
+    gem_test: bool = False
+    pre_processing_only: bool = False
+    debug: bool = True
     
     # S3 prefixes (cloud folders)
-    fasta_folder: str
-    fastq_folder: str
-    split_fasta_folder: str
-    idx_folder: str
-    out_folder: str
-    s3_temp_folder: str
+    fasta_folder: str = "fasta/"
+    fastq_folder: str = "fastqgz/"
+    split_fasta_folder: str = "fasta-chunks/"
+    idx_folder: str = "fastq-indexes/"
+    out_folder: str = "outputs/"
+    s3_temp_folder: str = "temp_outputs/"
