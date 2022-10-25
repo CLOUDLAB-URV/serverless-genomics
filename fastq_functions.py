@@ -1,9 +1,8 @@
-from lithops import Storage
 import subprocess as sp
-import aux_functions as aux
 import os
+from typing import List
 
-def prepare_fastq(fastq_chunk_size, seq_name, num_spots):
+def prepare_fastq(fastq_chunk_size: int, seq_name: str, num_spots: int) -> List[str]:
     """
     Prepare fastq chunks for processing. The fastq files can be obtained from SRA.
     """
@@ -13,7 +12,7 @@ def prepare_fastq(fastq_chunk_size, seq_name, num_spots):
     return fastq_list
 
 
-def preprocess_fastqsra(num_spots, chunk_size):
+def preprocess_fastqsra(num_spots: int, chunk_size: int) -> str:
     """
     Get fastq data.
     """
@@ -34,7 +33,7 @@ def preprocess_fastqsra(num_spots, chunk_size):
     return data
 
 
-def generate_fastq_chunk_list_fastq_sra(data,seq_name):
+def generate_fastq_chunk_list_fastq_sra(data: str, seq_name: str) -> List[str]:
     """
     Creates the fastq chunk list
     """
@@ -47,7 +46,7 @@ def generate_fastq_chunk_list_fastq_sra(data,seq_name):
     return list_fastq
 
 
-def read_chunks_info_random(data):
+def read_chunks_info_random(data: str) -> List[str]:
     chunk_list = []
     counter = 0
     
@@ -59,7 +58,7 @@ def read_chunks_info_random(data):
     return chunk_list
 
 
-def fastq_to_mapfun(fastq_file_key, fastq_chunk_data):
+def fastq_to_mapfun(fastq_file_key: str, fastq_chunk_data: str) -> str:
     '''
     Function executed within the map function to retrieve the relevant fastq chunk from object storage
     '''
