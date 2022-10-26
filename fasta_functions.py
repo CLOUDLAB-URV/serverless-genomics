@@ -21,7 +21,7 @@ def prepare_fasta(args: Arguments, fasta_chunks_prefix: str):
     # If chunks don't exist in storage, split fasta file.
     if not fasta_list or fasta_list == []:
         print("splitting fasta file and storing chunks")
-        split_fastafile(args.runtime_id, args.bucket, args.fasta_folder, args.fasta_file, args.split_fasta_folder, args.fasta_chunk_size, args.fasta_char_overlap)
+        split_fastafile(args)
         try:
             print("Finding newly created fasta chunks")
             print("Searching " + args.bucket + "/" + args.split_fasta_folder + fasta_chunks_prefix)

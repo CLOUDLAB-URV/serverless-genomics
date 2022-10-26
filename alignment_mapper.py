@@ -9,6 +9,7 @@ import fastq_functions as fq_func
 import aux_functions as aux
 from varcall_arguments import Arguments
 from lithops import Storage
+import zipfile
 
 
 class AlignmentMapper:
@@ -66,11 +67,17 @@ class AlignmentMapper:
         filtered_map_file = base_name + "_" + str(id) + "_filt_wline_no.map"
         os.rename(old_filtered_map_file, filtered_map_file)
         
+        # Compress the filtered map file
+        zipname = filtered_map_file + ".zip"
+        with zipfile.ZipFile(zipname, 'w', compression=zipfile.ZIP_BZIP2, compresslevel=9) as zf:
+            zf.write(filtered_map_file)
+        
         # Copy intermediate files to storage for index correction
-        map_index_file = aux.copy_to_s3(storage, self.args.bucket, map_index_file, True, 'map_index_files/')
-        filtered_map_file = aux.copy_to_s3(storage, self.args.bucket, filtered_map_file, True, 'filtered_map_files/')
-        map_index_file = map_index_file.replace("map_index_files/", "")
+        filtered_map_file = aux.copy_to_s3(storage, self.args.bucket, zipname, True, 'filtered_map_files/')
         filtered_map_file = filtered_map_file.replace("filtered_map_files/", "")
+        
+        map_index_file = aux.copy_to_s3(storage, self.args.bucket, map_index_file, True, 'map_index_files/')
+        map_index_file = map_index_file.replace("map_index_files/", "")
                 
         return fasta_chunk, fastq_chunk, map_index_file, filtered_map_file, base_name, id
 
@@ -85,10 +92,15 @@ class AlignmentMapper:
         ###################################################################
         aux.copy_to_runtime(storage, self.args.bucket, 'correctedIndex/', corrected_map_index_file)
         aux.copy_to_runtime(storage, self.args.bucket, 'filtered_map_files/', filtered_map_file)
+        
         corrected_map_index_file = "/tmp/" + corrected_map_index_file
         filtered_map_file = "/tmp/" + filtered_map_file
         fasta_chunk_folder_file = fasta_chunk.split("/")
         fasta = aux.copy_to_runtime(storage, self.args.fasta_bucket, fasta_chunk_folder_file[0]+"/", fasta_chunk_folder_file[1]) # Download fasta chunk
+        
+        with zipfile.ZipFile(filtered_map_file) as zf:
+            zf.extractall("/")
+        filtered_map_file = filtered_map_file.replace(".zip", "")
         
         ###################################################################
         #### FILTER ALIGNMENTS (CORRECT .map FILE)
