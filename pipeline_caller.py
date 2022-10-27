@@ -157,6 +157,7 @@ class PipelineCaller:
         print("number of fasta chunks: " + str(fastq_set_n))
         print("number of fastq chunks: " + str(len(fastq_list)))
         print("fasta x fastq chunks: "+ str(fastq_set_n*len(fastq_list)))
+
         print("number of iterdata elements: " + str(iterdata_n))
         pp_end = time.time()
         print(f'PP:0: preprocessing: execution_time: {pp_end - pp_start}: s')

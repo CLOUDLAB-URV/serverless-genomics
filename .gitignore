@@ -127,3 +127,9 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Ignore until refactoring
+plots/
+dockerfile/
+FastaPartitioner.py
+RUN_TEST.sh
