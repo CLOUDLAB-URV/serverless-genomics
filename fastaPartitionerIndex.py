@@ -36,8 +36,8 @@ class FastaPartitioner:
         start_base -= min_range
         end_base -= min_range
         len_base = len(data[start_base:end_base].replace('\n', ''))
-        # name_id num_chunks_has_divided offset_head offset_bases ->
-        # name_id num_chunks_has_divided offset_head offset_bases len_bases
+        # name_id offset_head offset_bases ->
+        # name_id offset_head offset_bases len_bases
         content[-1] = f'{content[-1]} {len_base}'
 
     # Generate metadata from fasta file
