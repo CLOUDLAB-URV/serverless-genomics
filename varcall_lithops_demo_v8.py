@@ -39,8 +39,7 @@ if __name__ == "__main__":
 
     # File Splitting Parameters
     parser.add_argument('-nfq','--fastq_read_n', help='Number of reads per fastq chunk ',required=False)
-    parser.add_argument('-nfa','--fasta_chunk_size',help='Number of characters per fasta chunk', required=True)
-    parser.add_argument('-ofa','--fasta_char_overlap',help='bp overlap between fasta chunks', required=False)
+    parser.add_argument('-nfa','--fasta_workers',help='Number of workers', required=True)
 
     # Pipeline-Specific Parameters
     parser.add_argument('-t','--tolerance',help='number of additional strata to include in filtration of map file', required=False)

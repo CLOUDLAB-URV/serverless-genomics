@@ -6,37 +6,52 @@ import metadata as Metadata
 import fastq_functions as fq_func
 import fasta_functions as fa_func
 from varcall_arguments import Arguments
+import pathlib
+from lithops import Storage
 
 # map/reduce functions and executor
 import map_reduce_caller as map_reduce
 from alignment_mapper import AlignmentMapper
 
 class PipelineCaller:
-    def generate_alignment_iterdata(self, list_fastq: list, list_fasta: list, iterdata_n):
+    def generate_alignment_iterdata(self, args: Arguments, list_fastq: list, fasta_index: str, fasta_file_path, iterdata_n):
         """
         Creates the lithops iterdata from the fasta and fastq chunk lists
         """
-        iterdata = []
+        storage = Storage()  
         
         # Number of fastq chunks processed. If doing a partial execution, iterdata_n will need to be multiple of the number of fasta chunks
         # so the index correction is done properly.
         num_chunks = 0  
-        
-        # Generate iterdata
-        for fastq_key in list_fastq:
-            num_chunks += 1
-            for fasta_key in list_fasta:
-                iterdata.append({'fasta_chunk': fasta_key, 'fastq_chunk': fastq_key})
+        data_index = iterdata = []
+        try:
+            data_index = storage.get_object(args.bucket, fasta_index).decode('utf-8').split('\n')  
+            for fastq_key in list_fastq:
+                num_chunks += 1
+                for i, sequence in enumerate(data_index):         
+                    #print(fastq_key)
+                    values = sequence.split(' ')
+                    try: 
+                        next_val = data_index[i+1].split(' ')
+                        last_byte_plus = int(next_val[1]-1) if next_val[0] != values[0] else int(next_val[2]-1)
+                    except:
+                        last_byte_plus = int(storage.head_object(args.bucket, fasta_file_path)['content-length']) - 1
+                    iterdata.append({'fasta_chunk': {'key_fasta': fasta_file_path, 'key_index': fasta_index, 'id': values[0], 'offset_head': int(values[1]),
+                                        'offset_base':  int(values[2]), 'length': int(values[3]), 'last_byte+': last_byte_plus}, 'fastq_chunk': fastq_key})
 
-        # Limit the length of iterdata if iterdata_n is not null.
-        if iterdata_n is not None or iterdata_n == "all": 
-            iterdata = iterdata[0:int(iterdata_n)]
-            if(len(iterdata)%len(list_fasta)!=0):
-                raise Exception("Number of elements in iterdata must be multiple of the number of fasta chunks.")
-            else: 
-                num_chunks = len(iterdata)//len(list_fasta)
+            # Limit the length of iterdata if iterdata_n is not null.
+            if iterdata_n is not None and iterdata_n != "all":
+                iterdata = iterdata[0:int(iterdata_n)]
+                if(len(iterdata)%len(data_index)!=0):
+                    raise Exception(f"ERROR. Number of elements in iterdata must be multiple of the number of fasta chunks (iterdata: {len(iterdata)}, data_index: {len(data_index)}).")
+                else:
+                    num_chunks = len(iterdata)//len(data_index)
+            if not iterdata:
+                raise Exception('ERROR. Iterdata not generated')
+        except Exception as e:
+            print(e)
 
-        return iterdata, num_chunks
+        return iterdata, len(data_index), num_chunks
     
     def execute_pipeline(self, args: Arguments):
         ###################################################################
@@ -65,8 +80,7 @@ class PipelineCaller:
 
         print("\nFILE SPLITTING SETTINGS")
         print("Fastq chunk size: %s lines" % str(args.fastq_chunk_size) )
-        print("Fasta chunk size: %s characters" % str(args.fasta_chunk_size) )
-        print("Fasta overlap size: %s characters" % str(args.fasta_char_overlap) )
+        print("Fasta number of workers: %s" % str(args.fasta_workers) ) 
 
         print("\nOTHER RUN SETTINGS")
         if args.function_n == "all":
@@ -115,10 +129,10 @@ class PipelineCaller:
         # the prefix contains the name of the fasta reference minus the suffix,
         # followed by block length and then "_split_" i.e. for hg19.fa
         # with chunks with block length of 400000 it would be hg19_400000_split_
-        fasta_chunks_prefix = re.sub("\.fasta|\.fa|\.fas", "_" + str(args.fasta_chunk_size) + "split_", args.fasta_file)
+        fasta_chunks_prefix = pathlib.Path(args.fasta_file).stem
         
         # Generate fasta chunks
-        fasta_list = fa_func.prepare_fasta(args, fasta_chunks_prefix)
+        fasta_index = fa_func.prepare_fasta(args)
         
         t3 = time.time()
         print(f'PP:0: fasta list: execution_time: {t3 - t2}: s')
@@ -133,19 +147,17 @@ class PipelineCaller:
         print("\nGenerating iterdata")
         
         # Generate iterdata
-        iterdata, num_chunks = self.generate_alignment_iterdata(fastq_list, fasta_list, args.iterdata_n)
-        
+        iterdata, fastq_set_n, num_chunks = self.generate_alignment_iterdata(args, fastq_list, fasta_index, args.fasta_folder+args.fasta_file, args.iterdata_n)
+
         iterdata_n=len(iterdata)
-        fastq_set_n=len(fasta_list) # number of fastq files aligned to each fasta chunk.
-        
-        
         ###################################################################
         #### 4. PREPROCESSING SUMMARY
         ###################################################################
         print("\nITERDATA LIST")
         print("number of fasta chunks: " + str(fastq_set_n))
         print("number of fastq chunks: " + str(len(fastq_list)))
-        print("fasta x fastq chunks: "+ str(len(fasta_list)*len(fastq_list)))
+        print("fasta x fastq chunks: "+ str(fastq_set_n*len(fastq_list)))
+
         print("number of iterdata elements: " + str(iterdata_n))
         pp_end = time.time()
         print(f'PP:0: preprocessing: execution_time: {pp_end - pp_start}: s')

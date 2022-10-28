@@ -9,7 +9,7 @@ class Arguments():
     fasta_file: str
     bucket: str
     fasta_bucket: str
-    fasta_chunk_size: int
+    fasta_workers: int
     fastq_chunk_size: int
     seq_type: str
     
@@ -31,7 +31,6 @@ class Arguments():
     
     # File Splitting Parameters
     fastq_read_n: int = None
-    fasta_char_overlap: int = 300
     
     # Pipeline-Specific Parameters
     tolerance: int = 0
@@ -60,7 +59,7 @@ class Arguments():
     # S3 prefixes (cloud folders)
     fasta_folder: str = "fasta/"
     fastq_folder: str = "fastqgz/"
-    split_fasta_folder: str = "fasta-chunks/"
+    fasta_folder_index: str = "fasta-indexes/"
     idx_folder: str = "fastq-indexes/"
     out_folder: str = "outputs/"
     s3_temp_folder: str = "temp_outputs/"
