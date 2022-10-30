@@ -5,12 +5,16 @@ import re
 
 def create_fasta_chunk_for_runtime(storage: Storage, bucket: str, fasta: dict, byte_range: dict, folder: str, file_name: str):
     data = list(re.finditer(r">.+\n", storage.get_object(bucket=bucket, key=folder+file_name,
-                extra_get_args={'Range': f"bytes={fasta['offset_head']}-{fasta['offset_base']}"}).decode('utf-8')))[0].group()
+                extra_get_args={'Range': f"bytes={fasta['chunk'][0]['offset_head']}-{fasta['chunk'][0]['offset_base']}"}).decode('utf-8')))[0].group()
     base = storage.get_object(bucket=bucket, key=folder+file_name, extra_get_args=byte_range).decode('utf-8')
     if base[0:1] == '\n': # Data has already a '\n', (data == >...\n), avoid doble '\n'
         data += base[1::]
     else:
         data += base
+    # TODO
+    a = str(byte_range) + "\n" + data
+    storage.put_object(bucket, "test/test_"+str(fasta['chunk'][0]['offset_base'])+ ".txt",a)
+    
     return data.encode('utf-8')
 
 def copy_to_runtime(storage: Storage, bucket: str, folder: str, file_name: str, byte_range={}, fasta=None):

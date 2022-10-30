@@ -32,9 +32,8 @@ class AlignmentMapper:
         """
         
         # CONTROL VARIABLES 
-        fasta_n=fasta_chunk['id']+'_'+str(fasta_chunk['offset_base'])
         fastq_n=re.sub('^[\s|\S]*number\':\s(\d*),[\s|\S]*$', r"\1", str(fastq_chunk))
-        func_key=self.args.fq_seqname+"_fq"+fastq_n+"-"+fasta_n
+        func_key=self.args.fq_seqname+"_fq"+fastq_n+"-fa"+str(fasta_chunk['id'])
 
         
         ###################################################################
@@ -48,7 +47,7 @@ class AlignmentMapper:
         ###################################################################
         fasta_folder_file = fasta_chunk['key_fasta'].split("/")
         fasta = aux.copy_to_runtime(storage, self.args.fasta_bucket, fasta_folder_file[0]+"/", fasta_folder_file[1], 
-                                {'Range': f"bytes={fasta_chunk['offset_base']}-{fasta_chunk['last_byte+']}"}, fasta_chunk) # Download fasta chunk 
+                                {'Range': f"bytes={fasta_chunk['chunk'][0]['offset_base']}-{fasta_chunk['chunk'][1]['last_byte+']}"}, fasta_chunk) # Download fasta chunk 
         
         gem_ref_nosuffix = os.path.splitext(fasta)[0]
         gem_ref = gem_ref_nosuffix + '.gem'
@@ -98,7 +97,7 @@ class AlignmentMapper:
         
         fasta_folder_file = fasta_chunk['key_fasta'].split("/") 
         fasta = aux.copy_to_runtime(storage, self.args.fasta_bucket, fasta_folder_file[0]+"/", fasta_folder_file[1], 
-                                {'Range': f"bytes={fasta_chunk['offset_base']}-{fasta_chunk['last_byte+']}"}, fasta_chunk) # Download fasta chunk
+                                {'Range': f"bytes={fasta_chunk['chunk'][0]['offset_base']}-{fasta_chunk['chunk'][1]['last_byte+']}"}, fasta_chunk) # Download fasta chunk
         
         with zipfile.ZipFile(filtered_map_file) as zf:
             zf.extractall("/")
@@ -170,7 +169,7 @@ class AlignmentMapper:
             fasta_key = fasta_key.replace(character,"")
         
         # Create intermediate key
-        fasta_chunk = fasta_chunk['id']+'_'+str(fasta_chunk['offset_base'])
+        fasta_chunk = str(fasta_chunk['id'])
         max_index = df.iloc[-1]['1']
         intermediate_key = self.args.file_format + "/" + fasta_key + "_" + fasta_chunk + "-" + fastq_chunk[0] + "_chunk" + str(fastq_chunk[1]["number"]) + "_" + str(max_index)
 
