@@ -11,9 +11,6 @@ def create_fasta_chunk_for_runtime(storage: Storage, bucket: str, fasta: dict, b
         data += base[1::]
     else:
         data += base
-    # TODO
-    a = str(byte_range) + "\n" + data
-    storage.put_object(bucket, "test/test_"+str(fasta['chunk'][0]['offset_base'])+ ".txt",a)
     
     return data.encode('utf-8')
 
