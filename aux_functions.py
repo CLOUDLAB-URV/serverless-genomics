@@ -11,7 +11,6 @@ def create_fasta_chunk_for_runtime(storage: Storage, bucket: str, fasta: dict, b
         data += base[1::]
     else:
         data += base
-    
     return data.encode('utf-8')
 
 def copy_to_runtime(storage: Storage, bucket: str, folder: str, file_name: str, byte_range={}, fasta=None):
