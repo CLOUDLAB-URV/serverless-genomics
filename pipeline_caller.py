@@ -14,6 +14,14 @@ import map_reduce_caller as map_reduce
 from alignment_mapper import AlignmentMapper
 
 class PipelineCaller:
+    def __generate_info_seq(self, args, storage, fasta_file_path, values, data_index, i):
+        try: 
+            next_val = data_index[i+1].split(' ')
+            last_byte_plus = int(next_val[1])-1 if next_val[0] != values[0] else int(next_val[2])-1
+        except:
+            last_byte_plus = int(storage.head_object(args.bucket, fasta_file_path)['content-length']) - 1
+        return {'offset_head': int(values[1]), 'offset_base':  int(values[2]), 'last_byte+': last_byte_plus}
+
     def generate_alignment_iterdata(self, args: Arguments, list_fastq: list, fasta_index: str, fasta_file_path, iterdata_n):
         """
         Creates the lithops iterdata from the fasta and fastq chunk lists
@@ -23,40 +31,54 @@ class PipelineCaller:
         # Number of fastq chunks processed. If doing a partial execution, iterdata_n will need to be multiple of the number of fasta chunks
         # so the index correction is done properly.
         num_chunks = 0  
-        data_index = iterdata = []
+        data_index = []
+        iterdata = []
+        fasta_chunks = []
         try:
-            data_index = storage.get_object(args.bucket, fasta_index).decode('utf-8').split('\n')  
+            fasta = storage.head_object(args.bucket, args.fasta_folder+args.fasta_file)
+            fa_chunk = int(int(fasta['content-length']) / int(args.fasta_workers))
+            data_index = storage.get_object(args.bucket, fasta_index).decode('utf-8').split('\n')
+                              
+            values = data_index[0].split(' ')
+            last_seq = values[4]
+            tmp_seq = self.__generate_info_seq(args, storage, fasta_file_path, values, data_index, 0)
+            fa_chunk = [tmp_seq] 
+            for i, sequence in enumerate(data_index[1:], start=1):                    
+                values = sequence.split(' ')
+                if last_seq == values[4]:
+                    tmp_seq = self.__generate_info_seq(args, storage, fasta_file_path, values, data_index, i)
+                else:
+                    fa_chunk.append(tmp_seq)
+                    fasta_chunks.append(fa_chunk)
+                    fa_chunk = [self.__generate_info_seq(args, storage, fasta_file_path, values, data_index, i)]
+                last_seq = values[4]
+  
             for fastq_key in list_fastq:
                 num_chunks += 1
-                for i, sequence in enumerate(data_index):         
-                    #print(fastq_key)
-                    values = sequence.split(' ')
-                    try: 
-                        next_val = data_index[i+1].split(' ')
-                        last_byte_plus = int(next_val[1]-1) if next_val[0] != values[0] else int(next_val[2]-1)
-                    except:
-                        last_byte_plus = int(storage.head_object(args.bucket, fasta_file_path)['content-length']) - 1
-                    iterdata.append({'fasta_chunk': {'key_fasta': fasta_file_path, 'key_index': fasta_index, 'id': values[0], 'offset_head': int(values[1]),
-                                        'offset_base':  int(values[2]), 'length': int(values[3]), 'last_byte+': last_byte_plus}, 'fastq_chunk': fastq_key})
+                for i, chunk in enumerate(fasta_chunks):
+                    iterdata.append({'fasta_chunk': {'key_fasta': fasta_file_path, 'key_index': fasta_index, 'id': i, 'chunk': chunk}, 'fastq_chunk': fastq_key}) 
 
             # Limit the length of iterdata if iterdata_n is not null.
             if iterdata_n is not None and iterdata_n != "all":
                 iterdata = iterdata[0:int(iterdata_n)]
-                if(len(iterdata)%len(data_index)!=0):
+                if(len(iterdata)%len(fasta_chunks)!=0):
                     raise Exception(f"ERROR. Number of elements in iterdata must be multiple of the number of fasta chunks (iterdata: {len(iterdata)}, data_index: {len(data_index)}).")
                 else:
-                    num_chunks = len(iterdata)//len(data_index)
+                    num_chunks = int(re.sub('^[\s|\S]*number\':\s(\d*),[\s|\S]*$', r"\1", str(iterdata[-1]['fastq_chunk'])))
             if not iterdata:
                 raise Exception('ERROR. Iterdata not generated')
         except Exception as e:
             print(e)
+            exit()
 
-        return iterdata, len(data_index), num_chunks
+        return iterdata, len(fasta_chunks), num_chunks
     
     def execute_pipeline(self, args: Arguments):
         ###################################################################
         #### START THE PIPELINE
         ###################################################################
+        #storage = Storage()
+
         run_id=str(randint(1000,9999))
         
         pp_start = time.time()

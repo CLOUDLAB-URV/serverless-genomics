@@ -32,13 +32,13 @@ class FastaPartitioner:
         self.storage = storage
         self.bucket = bucket
 
-    def __get_length(self, min_range, content, data, start_base, end_base):
+    def __get_length(self, min_range, content, data, start_base, end_base, id):
         start_base -= min_range
         end_base -= min_range
         len_base = len(data[start_base:end_base].replace('\n', ''))
         # name_id offset_head offset_bases ->
-        # name_id offset_head offset_bases len_bases
-        content[-1] = f'{content[-1]} {len_base}'
+        # name_id offset_head offset_bases len_bases id
+        content[-1] = f'{content[-1]} {len_base} {str(id)}'
 
     # Generate metadata from fasta file
     def generate_chunks(self, id, key, chunk_size, obj_size, partitions):
@@ -76,28 +76,28 @@ class FastaPartitioner:
                                 length_base = f"{length_0}"
                                 offset = f'{offset_0}'
                             # >> offset_head offset_bases_split length/s first_line_before_space_or_\n
-                            content.append(f">> <Y> {str(offset)} {length_base} ^{text}^")  # Split sequences
+                            content.append(f">> <Y> {str(offset)} {length_base} {str(id)} ^{text}^")  # Split sequences
                         else:  # When the first header found is false, when in a split stream there is a split header that has a '>' inside (ex: >tr|...o-alpha-(1->5)-L-e...\n)
                             first_sequence = True
                             start = end = -1  # Avoid entering the following condition
                 if prev != start:  # When if the current sequence base is not empty
                     if prev != -1:
-                        self.__get_length(min_range, content, data, prev, start)
+                        self.__get_length(min_range, content, data, prev, start, id)
                     # name_id offset_head offset_bases
-                    id = m.group().replace('\n', '').split(' ')[0].replace('>', '')
-                    content.append(f"{id} {str(start)} {str(end)}")
+                    id_name = m.group().replace('\n', '').split(' ')[0].replace('>', '')
+                    content.append(f"{id_name} {str(start)} {str(end)}")
                 prev = end
             
             if len(heads) != 0 and len(ini_heads) != 0 and ini_heads[-1].start() + 1 > heads[
                 -1].start():  # Check if the last head of the current one is cut. (ini_heads[-1].start() + 1): ignore '\n'
                 last_seq_start = ini_heads[-1].start() + min_range + 1  # (... + 1): ignore '\n'
-                self.__get_length(min_range, content, data, prev, last_seq_start) # Add length of bases to last sequence
+                self.__get_length(min_range, content, data, prev, last_seq_start, id) # Add length of bases to last sequence
                 text = data[last_seq_start - min_range::]
                 # [<->|<_>]name_id_split offset_head
                 content.append(
                     f"{'<-' if ' ' in text else '<_'}{text.split(' ')[0]} {str(last_seq_start)}")  # if '<->' there is all id
             else:  # Add length of bases to last sequence
-                self.__get_length(min_range, content, data, prev, max_range)
+                self.__get_length(min_range, content, data, prev, max_range, id)
         elif data:
             length = len(data.replace('\n', ''))
             content.append(f"<_-_> {length}")
@@ -124,7 +124,7 @@ def reduce_generate_chunks(results):
                                 if '<->' in list_prev[-1]:  # If the split was after a space, then there is all id
                                     name_id = param_seq_prev[0].replace('<->', '')
                                 else:
-                                    name_id = param_seq_prev[0].replace('<_>', '') + param[4].replace('^', '')
+                                    name_id = param_seq_prev[0].replace('<_>', '') + param[5].replace('^', '')
                                 length = param[3].split('-')[1]
                                 offset_head = param_seq_prev[1]
                                 offset_base = param[2].split('-')[1]
@@ -134,10 +134,10 @@ def reduce_generate_chunks(results):
                                 name_id = param_seq_prev[0]
                                 offset_head = param_seq_prev[1]
                                 offset_base = param[2].split('-')[0]
-                            list_seq[0] = list_seq[0].replace(f' {param[4]}', '')  # Remove 4rt param
+                            list_seq[0] = list_seq[0].replace(f' {param[5]}', '')  # Remove 5rt param
                             list_seq[0] = list_seq[0].replace(f' {param[2]} ',
                                                           f' {offset_base} ')  # [offset_base_0-offset_base_1|offset_base] -> offset_base
-                            list_seq[0] = list_seq[0].replace(f' {param[3]}', f' {length}')  # [length_0-length_1|length] -> length
+                            list_seq[0] = list_seq[0].replace(f' {param[3]} ', f' {length} ')  # [length_0-length_1|length] -> length
                             list_seq[0] = list_seq[0].replace(' <Y> ', f' {offset_head} ')  # Y --> offset_head
                             list_seq[0] = list_seq[0].replace('>> ', f'{name_id} ')  # '>>' -> name_id
                         elif '<_-_>' in list_seq[0]:
