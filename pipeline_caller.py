@@ -62,7 +62,7 @@ class PipelineCaller:
             if iterdata_n is not None and iterdata_n != "all":
                 iterdata = iterdata[0:int(iterdata_n)]
                 if(len(iterdata)%len(fasta_chunks)!=0):
-                    raise Exception(f"ERROR. Number of elements in iterdata must be multiple of the number of fasta chunks (iterdata: {len(iterdata)}, data_index: {len(data_index)}).")
+                    raise Exception(f"ERROR. Number of elements in iterdata must be multiple of the number of fasta chunks (iterdata: {len(iterdata)}, data_index: {len(fasta_chunks)}).")
                 else:
                     num_chunks = int(re.sub('^[\s|\S]*number\':\s(\d*),[\s|\S]*$', r"\1", str(iterdata[-1]['fastq_chunk'])))
             if not iterdata:
