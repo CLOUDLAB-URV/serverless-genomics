@@ -106,7 +106,7 @@ class PipelineCaller:
         print("Fastq chunk size: %s lines" % str(args.fastq_chunk_size) )
         print("Fasta number of workers: %s" % str(args.fasta_workers) ) 
         print("Chunk per workers: %s B" % str(size_chunk_w) ) 
-        
+
         print("\nOTHER RUN SETTINGS")
         if args.function_n == "all":
             print("Number of functions spawned: %s" % args.function_n )
