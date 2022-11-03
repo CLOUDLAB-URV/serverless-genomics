@@ -38,7 +38,7 @@ class PipelineCaller:
             fasta = storage.head_object(args.bucket, args.fasta_folder+args.fasta_file)
             fa_chunk = int(int(fasta['content-length']) / int(args.fasta_workers))
             data_index = storage.get_object(args.bucket, fasta_index).decode('utf-8').split('\n')
-                              
+                          
             values = data_index[0].split(' ')
             last_seq = values[4]
             tmp_seq = self.__generate_info_seq(args, storage, fasta_file_path, values, data_index, 0)
@@ -50,9 +50,10 @@ class PipelineCaller:
                 else:
                     fa_chunk.append(tmp_seq)
                     fasta_chunks.append(fa_chunk)
-                    fa_chunk = [self.__generate_info_seq(args, storage, fasta_file_path, values, data_index, i)]
+                    tmp_seq = self.__generate_info_seq(args, storage, fasta_file_path, values, data_index, i)
+                    fa_chunk = [tmp_seq]
                 last_seq = values[4]
-  
+                
             for fastq_key in list_fastq:
                 num_chunks += 1
                 for i, chunk in enumerate(fasta_chunks):
@@ -62,7 +63,7 @@ class PipelineCaller:
             if iterdata_n is not None and iterdata_n != "all":
                 iterdata = iterdata[0:int(iterdata_n)]
                 if(len(iterdata)%len(fasta_chunks)!=0):
-                    raise Exception(f"ERROR. Number of elements in iterdata must be multiple of the number of fasta chunks (iterdata: {len(iterdata)}, data_index: {len(data_index)}).")
+                    raise Exception(f"ERROR. Number of elements in iterdata must be multiple of the number of fasta chunks (iterdata: {len(iterdata)}, data_index: {len(fasta_chunks)}).")
                 else:
                     num_chunks = int(re.sub('^[\s|\S]*number\':\s(\d*),[\s|\S]*$', r"\1", str(iterdata[-1]['fastq_chunk'])))
             if not iterdata:
@@ -77,7 +78,8 @@ class PipelineCaller:
         ###################################################################
         #### START THE PIPELINE
         ###################################################################
-        #storage = Storage()
+        storage = Storage()
+        size_chunk_w = int(int(storage.head_object(args.bucket, args.fasta_folder+args.fasta_file)['content-length']) / int(args.fasta_workers))
 
         run_id=str(randint(1000,9999))
         
@@ -103,7 +105,8 @@ class PipelineCaller:
         print("\nFILE SPLITTING SETTINGS")
         print("Fastq chunk size: %s lines" % str(args.fastq_chunk_size) )
         print("Fasta number of workers: %s" % str(args.fasta_workers) ) 
-
+        print("Chunk per workers: %s B" % str(size_chunk_w) ) 
+        
         print("\nOTHER RUN SETTINGS")
         if args.function_n == "all":
             print("Number of functions spawned: %s" % args.function_n )

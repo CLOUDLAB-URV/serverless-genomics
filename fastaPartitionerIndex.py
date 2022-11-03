@@ -100,7 +100,7 @@ class FastaPartitioner:
                 self.__get_length(min_range, content, data, prev, max_range, id)
         elif data:
             length = len(data.replace('\n', ''))
-            content.append(f"<_-_> {length}")
+            content.append(f"<_-_> {min_range} {length} {id}")
         return content
     
 
@@ -141,9 +141,8 @@ def reduce_generate_chunks(results):
                             list_seq[0] = list_seq[0].replace(' <Y> ', f' {offset_head} ')  # Y --> offset_head
                             list_seq[0] = list_seq[0].replace('>> ', f'{name_id} ')  # '>>' -> name_id
                         elif '<_-_>' in list_seq[0]:
-                            list_seq[0] = list_prev[-1].replace(f' {param_seq_prev[3]}',
-                                                              f' {int(param_seq_prev[3]) + int(param[1])}')  # [length_0-length_1|length] -> length
-                            list_prev.pop()
+                            list_seq[0] = list_seq[0].replace(f'<_-_> ',
+                                                              f'{param_seq_prev[0]} {param_seq_prev[1]} ')
             results = list(filter(None, results))
         return results
 
