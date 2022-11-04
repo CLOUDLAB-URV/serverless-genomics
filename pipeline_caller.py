@@ -34,26 +34,33 @@ class PipelineCaller:
         data_index = []
         iterdata = []
         fasta_chunks = []
+        last_seq = ""
         try:
             fasta = storage.head_object(args.bucket, args.fasta_folder+args.fasta_file)
             fa_chunk = int(int(fasta['content-length']) / int(args.fasta_workers))
             data_index = storage.get_object(args.bucket, fasta_index).decode('utf-8').split('\n')
-                          
-            values = data_index[0].split(' ')
-            last_seq = values[4]
-            tmp_seq = self.__generate_info_seq(args, storage, fasta_file_path, values, data_index, 0)
-            fa_chunk = [tmp_seq] 
-            for i, sequence in enumerate(data_index[1:], start=1):                    
+
+            is_1r_seq_chunk = True 
+            last_seq = data_index[0].split(' ')
+            for i, sequence in enumerate(data_index):                    
                 values = sequence.split(' ')
-                if last_seq == values[4]:
-                    tmp_seq = self.__generate_info_seq(args, storage, fasta_file_path, values, data_index, i)
-                else:
-                    fa_chunk.append(tmp_seq)
-                    fasta_chunks.append(fa_chunk)
-                    tmp_seq = self.__generate_info_seq(args, storage, fasta_file_path, values, data_index, i)
-                    fa_chunk = [tmp_seq]
-                last_seq = values[4]
+                if is_1r_seq_chunk:
+                    fa_chunk = [self.__generate_info_seq(args, storage, fasta_file_path, last_seq, data_index, i)]
+                    is_1r_seq_chunk = False
                 
+                if last_seq[4] != values[4]:
+                    fa_chunk.append(self.__generate_info_seq(args, storage, fasta_file_path, last_seq, data_index, i))
+                    fasta_chunks.append(fa_chunk)
+                    is_1r_seq_chunk = True
+                #print(last_seq[4] + ' ' + values[4] + ' ' + str(len(fasta_chunks)))
+                last_seq = values
+            if is_1r_seq_chunk:
+                aux = self.__generate_info_seq(args, storage, fasta_file_path, last_seq, data_index, i)
+                fasta_chunks.append([aux, aux])
+            else:
+                fa_chunk.append(self.__generate_info_seq(args, storage, fasta_file_path, last_seq, data_index, i))
+                fasta_chunks.append(fa_chunk)
+    
             for fastq_key in list_fastq:
                 num_chunks += 1
                 for i, chunk in enumerate(fasta_chunks):

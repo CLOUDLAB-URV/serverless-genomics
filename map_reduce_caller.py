@@ -114,6 +114,6 @@ def map_reduce(args: Arguments, iterdata: list, map_func: AlignmentMapper, num_c
     for key in keys:
         storage.delete_object(args.bucket, key)
     
-    return map_time 
+    return map_time
 
     # TODO ADD REDUCE
