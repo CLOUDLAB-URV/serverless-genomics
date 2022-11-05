@@ -34,25 +34,33 @@ class PipelineCaller:
         data_index = []
         iterdata = []
         fasta_chunks = []
+        last_seq = ""
         try:
             fasta = storage.head_object(args.bucket, args.fasta_folder+args.fasta_file)
             fa_chunk = int(int(fasta['content-length']) / int(args.fasta_workers))
             data_index = storage.get_object(args.bucket, fasta_index).decode('utf-8').split('\n')
-                              
-            values = data_index[0].split(' ')
-            last_seq = values[4]
-            tmp_seq = self.__generate_info_seq(args, storage, fasta_file_path, values, data_index, 0)
-            fa_chunk = [tmp_seq] 
-            for i, sequence in enumerate(data_index[1:], start=1):                    
+
+            is_1r_seq_chunk = True 
+            last_seq = data_index[0].split(' ')
+            for i, sequence in enumerate(data_index):                    
                 values = sequence.split(' ')
-                if last_seq == values[4]:
-                    tmp_seq = self.__generate_info_seq(args, storage, fasta_file_path, values, data_index, i)
-                else:
-                    fa_chunk.append(tmp_seq)
+                if is_1r_seq_chunk:
+                    fa_chunk = [self.__generate_info_seq(args, storage, fasta_file_path, last_seq, data_index, i)]
+                    is_1r_seq_chunk = False
+                
+                if last_seq[4] != values[4]:
+                    fa_chunk.append(self.__generate_info_seq(args, storage, fasta_file_path, last_seq, data_index, i))
                     fasta_chunks.append(fa_chunk)
-                    fa_chunk = [self.__generate_info_seq(args, storage, fasta_file_path, values, data_index, i)]
-                last_seq = values[4]
-  
+                    is_1r_seq_chunk = True
+                #print(last_seq[4] + ' ' + values[4] + ' ' + str(len(fasta_chunks)))
+                last_seq = values
+            if is_1r_seq_chunk:
+                aux = self.__generate_info_seq(args, storage, fasta_file_path, last_seq, data_index, i)
+                fasta_chunks.append([aux, aux])
+            else:
+                fa_chunk.append(self.__generate_info_seq(args, storage, fasta_file_path, last_seq, data_index, i))
+                fasta_chunks.append(fa_chunk)
+    
             for fastq_key in list_fastq:
                 num_chunks += 1
                 for i, chunk in enumerate(fasta_chunks):
@@ -62,7 +70,7 @@ class PipelineCaller:
             if iterdata_n is not None and iterdata_n != "all":
                 iterdata = iterdata[0:int(iterdata_n)]
                 if(len(iterdata)%len(fasta_chunks)!=0):
-                    raise Exception(f"ERROR. Number of elements in iterdata must be multiple of the number of fasta chunks (iterdata: {len(iterdata)}, data_index: {len(data_index)}).")
+                    raise Exception(f"ERROR. Number of elements in iterdata must be multiple of the number of fasta chunks (iterdata: {len(iterdata)}, data_index: {len(fasta_chunks)}).")
                 else:
                     num_chunks = int(re.sub('^[\s|\S]*number\':\s(\d*),[\s|\S]*$', r"\1", str(iterdata[-1]['fastq_chunk'])))
             if not iterdata:
@@ -77,7 +85,8 @@ class PipelineCaller:
         ###################################################################
         #### START THE PIPELINE
         ###################################################################
-        #storage = Storage()
+        storage = Storage()
+        size_chunk_w = int(int(storage.head_object(args.bucket, args.fasta_folder+args.fasta_file)['content-length']) / int(args.fasta_workers))
 
         run_id=str(randint(1000,9999))
         
@@ -103,6 +112,7 @@ class PipelineCaller:
         print("\nFILE SPLITTING SETTINGS")
         print("Fastq chunk size: %s lines" % str(args.fastq_chunk_size) )
         print("Fasta number of workers: %s" % str(args.fasta_workers) ) 
+        print("Chunk per workers: %s B" % str(size_chunk_w) ) 
 
         print("\nOTHER RUN SETTINGS")
         if args.function_n == "all":
