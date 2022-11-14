@@ -3,27 +3,7 @@ import pathlib
 import re
 import lithops
 import argparse
-
-
-parser = argparse.ArgumentParser(
-    description='Fasta index partitioner, version 1.0. Takes a fasta file and create an index of fasta.',
-)
-
-parser.add_argument('--mybucket',
-                    help='Your bucket name, where you want data to be located, ex: lithops-cloudbutton-genomics')
-parser.add_argument('--key',
-                    help='Your key, ex: "fasta/hg19.fa"')
-parser.add_argument('--workers',
-                    help='Number of workers')
-parser.add_argument('--fasta_folder',
-                    help='Fasta folder within your bucket to store the chunks, ex: fasta/')
-args = parser.parse_args()
-
-
-my_bucket_name = args.mybucket
-my_key = args.key
-n_workers = int(args.workers)
-fasta_folder = args.fasta_folder
+from varcall_arguments import Arguments
 
 
 class FastaPartitioner:
@@ -156,8 +136,10 @@ def generate_index_file(bucket_name, data, fasta_folder, file_name):
 
 
 class FunctionsFastaIndex:
-    def __init__(self, path_index_file):
-        self.data_path = path_index_file
+    def __init__(self, path_index_file, path_fasta):
+        self.path_index_file = path_index_file
+        self.path_fasta = path_fasta
+        self.storage = lithops.Storage() 
 
     def get_info_sequence(self, identifier):
         length = offset_head = offset = None
@@ -191,21 +173,72 @@ class FunctionsFastaIndex:
         return sequences
 
 
+    def __generate_info_seq(self, args, values, data_index, i):
+        try: 
+            next_val = data_index[i+1].split(' ')
+            last_byte_plus = int(next_val[1])-1 if next_val[0] != values[0] else int(next_val[2])-1
+        except:
+            last_byte_plus = int(self.storage.head_object(args.bucket, self.path_fasta)['content-length']) - 1
+        return {'offset_head': int(values[1]), 'offset_base':  int(values[2]), 'last_byte+': last_byte_plus}
+
+    def get_chunks(self, args: Arguments):
+        data_index = []
+        fasta_chunks = []
+        last_seq = ""        
+        data_index = self.storage.get_object(args.bucket, self.path_index_file).decode('utf-8').split('\n')
+
+        is_1r_seq_chunk = True 
+        last_seq = data_index[0].split(' ')
+        for i, sequence in enumerate(data_index):                    
+            values = sequence.split(' ')
+            if is_1r_seq_chunk:
+                fa_chunk = [self.__generate_info_seq(args, last_seq, data_index, i)]
+                is_1r_seq_chunk = False
+            
+            if last_seq[4] != values[4]:
+                fa_chunk.append(self.__generate_info_seq(args, last_seq, data_index, i))
+                fasta_chunks.append(fa_chunk)
+                is_1r_seq_chunk = True
+
+            last_seq = values
+        if is_1r_seq_chunk:
+            aux = self.__generate_info_seq(args, last_seq, data_index, i)
+            fasta_chunks.append([aux, aux])
+        else:
+            fa_chunk.append(self.__generate_info_seq(args, last_seq, data_index, i))
+            fasta_chunks.append(fa_chunk)
+
+        return fasta_chunks
+
+
 if __name__ == "__main__":
+    # Arguments
+    parser = argparse.ArgumentParser(
+    description='Fasta index partitioner, version 1.0. Takes a fasta file and create an index of fasta.',
+    )
+
+    parser.add_argument('--mybucket',
+                        help='Your bucket name, where you want data to be located, ex: lithops-cloudbutton-genomics')
+    parser.add_argument('--key',
+                        help='Your key, ex: "fasta/hg19.fa"')
+    parser.add_argument('--workers',
+                        help='Number of workers')
+    parser.add_argument('--fasta_folder',
+                        help='Fasta folder within your bucket to store the chunks, ex: fasta/')
+    args = parser.parse_args()
+
+    my_bucket_name = args.mybucket
+    my_key = args.key
+    n_workers = int(args.workers)
+    fasta_folder = args.fasta_folder
+
+    # Execution
     storage = lithops.Storage()    
     
     fexec = lithops.FunctionExecutor()
 
     fasta = storage.head_object(my_bucket_name, my_key)
     chunk_size = int(int(fasta['content-length']) / n_workers)
-    
-    # print('===================================================================================')
-    # print('metadata chunks: ' + str(chunk_size))
-    # print('bucket to access data: ' + str(my_bucket_name))
-    # print('reference file name: ' + pathlib.Path(my_key).stem)
-    # print('fasta size: ' + str(fasta['content-length']) + ' bytes')
-    # print('===================================================================================')
-
     map_iterdata = [{'key': my_key} for _ in range(n_workers)]
     extra_args = {'bucket_name': my_bucket_name, 'chunk_size': chunk_size, 'obj_size': fasta['content-length'], 'partitions': n_workers}
     fexec.map_reduce(map_function=map_funct, map_iterdata=map_iterdata, extra_args=extra_args,
