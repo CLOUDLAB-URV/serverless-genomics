@@ -7,7 +7,6 @@ from varcall_arguments import Arguments
 
 
 class FastaPartitioner:
-
     def __init__(self, storage, bucket):
         self.storage = storage
         self.bucket = bucket
