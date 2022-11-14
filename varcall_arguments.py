@@ -50,6 +50,7 @@ class Arguments():
     func_timeout_reduce: int = 2400
     skip_map: bool = False
     lb_method: str = "select"
+    checkpoints: bool = False
     
     # DEBUGGING SETTINGS
     gem_test: bool = False

@@ -41,13 +41,12 @@ def map_reduce(args: Arguments, iterdata: list, map_func: AlignmentMapper, num_c
     
     # Initizalize storage and backend instances
     storage = Storage()
-    s3 = storage.storage_handler.s3_client
     fexec = lithops.FunctionExecutor(log_level=log_level, runtime=args.runtime_id, runtime_memory=args.runtime_mem)
 
     if args.skip_map == "False":
         # Delete old files
         print("Deleting previous mapper outputs...")
-        af.delete_objects(storage, args.bucket, args.file_format)
+        af.delete_files(storage, args, cloud_prefixes=[args.file_format])
 
     print("Running Map Phase... " + str(len(iterdata)) + " functions")
     
@@ -61,7 +60,7 @@ def map_reduce(args: Arguments, iterdata: list, map_func: AlignmentMapper, num_c
         print("PROCESSING MAP: STAGE 1")
         
         #Load futures from previous execution
-        map1_futures = af.load_cache(map1_cachefile)
+        map1_futures = af.load_cache(map1_cachefile, args)
         
         #Execute first map if futures were not found
         if(not map1_futures):
@@ -80,7 +79,7 @@ def map_reduce(args: Arguments, iterdata: list, map_func: AlignmentMapper, num_c
         print("PROCESSING INDEX CORRECTION")
         
         #Load futures from previous execution  
-        correction_futures = af.load_cache(correction_cachefile)
+        correction_futures = af.load_cache(correction_cachefile, args)
         
         #Execute correction if futures were not found 
         if(not correction_futures):
@@ -105,7 +104,7 @@ def map_reduce(args: Arguments, iterdata: list, map_func: AlignmentMapper, num_c
         print("PROCESSING MAP: STAGE 2")
         
         #Load futures from previous execution 
-        map2_futures = af.load_cache(map2_cachefile)
+        map2_futures = af.load_cache(map2_cachefile, args)
         
         #Execute correction if futures were not found    
         if(not map2_futures):
@@ -139,7 +138,7 @@ def map_reduce(args: Arguments, iterdata: list, map_func: AlignmentMapper, num_c
     map_time = end - start
 
     #Delete intermediate files
-    af.delete_intermediate_files(storage, args, ['map_index_files/', 'corrected_index/', 'filtered_map_files/'], [map1_cachefile, map2_cachefile, correction_cachefile])
+    af.delete_files(storage, args, cloud_prefixes=['map_index_files/', 'corrected_index/', 'filtered_map_files/'], local_files=[map1_cachefile, map2_cachefile, correction_cachefile])
     
     return map_time
 

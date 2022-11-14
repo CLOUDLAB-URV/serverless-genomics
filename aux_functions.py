@@ -43,18 +43,12 @@ def copy_to_s3(storage: Storage, bucket: str, file_name: str, temp_to_s3: bool, 
         return destination_key
     return ""
 
-def delete_objects(storage: Storage, bucket: str, file_format: str):
-    """
-    Delete all objects with a given prefix inside a bucket
-    """
-    keys = storage.list_keys(bucket=bucket, prefix=file_format+"/")
-    storage.delete_objects(bucket=bucket, key_list=keys)
 
-def load_cache(filename: str) -> FuturesList:
+def load_cache(filename: str, args:Arguments) -> FuturesList:
     """
     Load a futures local file from previous execution
     """
-    if (os.path.isfile(filename)):
+    if os.path.isfile(filename) and args.checkpoints:
         file = open(filename, 'rb')
         futures = pickle.load(file)
         file.close()
@@ -70,7 +64,7 @@ def dump_cache(filename: str, futures: FuturesList):
     pickle.dump(futures, file)
     file.close()
     
-def delete_intermediate_files(storage: Storage, args:Arguments, cloud_prefixes: List[str], cache_files: List[str]):
+def delete_files(storage: Storage, args:Arguments, cloud_prefixes: List[str] = [], local_files: List[str] = []):
     """
     Delete a list of cloud and local files
     """
@@ -81,6 +75,6 @@ def delete_intermediate_files(storage: Storage, args:Arguments, cloud_prefixes: 
             storage.delete_object(args.bucket, key)
     
     #Delete local files        
-    for file in cache_files:
+    for file in local_files:
         if (os.path.isfile(file)):
             os.remove(file)
