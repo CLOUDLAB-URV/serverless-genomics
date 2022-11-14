@@ -14,53 +14,18 @@ import map_reduce_caller as map_reduce
 from alignment_mapper import AlignmentMapper
 
 class PipelineCaller:
-    def __generate_info_seq(self, args, storage, fasta_file_path, values, data_index, i):
-        try: 
-            next_val = data_index[i+1].split(' ')
-            last_byte_plus = int(next_val[1])-1 if next_val[0] != values[0] else int(next_val[2])-1
-        except:
-            last_byte_plus = int(storage.head_object(args.bucket, fasta_file_path)['content-length']) - 1
-        return {'offset_head': int(values[1]), 'offset_base':  int(values[2]), 'last_byte+': last_byte_plus}
-
     def generate_alignment_iterdata(self, args: Arguments, list_fastq: list, fasta_index: str, fasta_file_path, iterdata_n):
         """
         Creates the lithops iterdata from the fasta and fastq chunk lists
-        """
-        storage = Storage()  
-        
+        """ 
         # Number of fastq chunks processed. If doing a partial execution, iterdata_n will need to be multiple of the number of fasta chunks
         # so the index correction is done properly.
         num_chunks = 0  
-        data_index = []
-        iterdata = []
-        fasta_chunks = []
-        last_seq = ""
         try:
-            fasta = storage.head_object(args.bucket, args.fasta_folder+args.fasta_file)
-            fa_chunk = int(int(fasta['content-length']) / int(args.fasta_workers))
-            data_index = storage.get_object(args.bucket, fasta_index).decode('utf-8').split('\n')
-
-            is_1r_seq_chunk = True 
-            last_seq = data_index[0].split(' ')
-            for i, sequence in enumerate(data_index):                    
-                values = sequence.split(' ')
-                if is_1r_seq_chunk:
-                    fa_chunk = [self.__generate_info_seq(args, storage, fasta_file_path, last_seq, data_index, i)]
-                    is_1r_seq_chunk = False
-                
-                if last_seq[4] != values[4]:
-                    fa_chunk.append(self.__generate_info_seq(args, storage, fasta_file_path, last_seq, data_index, i))
-                    fasta_chunks.append(fa_chunk)
-                    is_1r_seq_chunk = True
-                #print(last_seq[4] + ' ' + values[4] + ' ' + str(len(fasta_chunks)))
-                last_seq = values
-            if is_1r_seq_chunk:
-                aux = self.__generate_info_seq(args, storage, fasta_file_path, last_seq, data_index, i)
-                fasta_chunks.append([aux, aux])
-            else:
-                fa_chunk.append(self.__generate_info_seq(args, storage, fasta_file_path, last_seq, data_index, i))
-                fasta_chunks.append(fa_chunk)
-    
+            functions = FunctionsFastaIndex(fasta_index, fasta_file_path)
+            fasta_chunks = functions.get_chunks(args)
+            
+            iterdata = []
             for fastq_key in list_fastq:
                 num_chunks += 1
                 for i, chunk in enumerate(fasta_chunks):
