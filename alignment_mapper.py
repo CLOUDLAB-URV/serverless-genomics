@@ -92,7 +92,7 @@ class AlignmentMapper:
         ###################################################################
         #### RECOVER DATA FROM PREVIOUS MAP
         ###################################################################
-        corrected_map_index_file = aux.copy_to_runtime(storage, self.args.bucket, 'correctedIndex/', corrected_map_index_file)
+        corrected_map_index_file = aux.copy_to_runtime(storage, self.args.bucket, 'corrected_index/', corrected_map_index_file)
         filtered_map_file = aux.copy_to_runtime(storage, self.args.bucket, 'filtered_map_files/', filtered_map_file)
         
         fasta_folder_file = fasta_chunk['key_fasta'].split("/") 

@@ -15,7 +15,7 @@ def index_correction_map(setname: str, bucket: str, storage: Storage) -> int:
     """
     Corrects the index after the first map iteration. 
     All the set files must have the prefix "map_index_files/".
-    Corrected indices will be stored with the prefix "correctedIndex/".
+    Corrected indices will be stored with the prefix "corrected_index/".
     """
     # Download all files related to this set
     filelist = storage.list_keys(bucket, "map_index_files/"+setname)
@@ -30,7 +30,7 @@ def index_correction_map(setname: str, bucket: str, storage: Storage) -> int:
     result2 = sp.run(cmd2, shell=True, check=True, universal_newlines=True)
     
     # Upload corrected index to storage
-    storage.upload_file('/tmp/'+setname+'.txt', bucket, 'correctedIndex/'+setname+'.txt')
+    storage.upload_file('/tmp/'+setname+'.txt', bucket, 'corrected_index/'+setname+'.txt')
     return 0  
         
 def map_reduce(args: Arguments, iterdata: list, map_func: AlignmentMapper, num_chunks: int) -> float:
@@ -139,7 +139,7 @@ def map_reduce(args: Arguments, iterdata: list, map_func: AlignmentMapper, num_c
     map_time = end - start
 
     #Delete intermediate files
-    af.delete_intermediate_files(storage, args, ['map_index_files/', 'correctedIndex/', 'filtered_map_files/'], [map1_cachefile, map2_cachefile, correction_cachefile])
+    af.delete_intermediate_files(storage, args, ['map_index_files/', 'corrected_index/', 'filtered_map_files/'], [map1_cachefile, map2_cachefile, correction_cachefile])
     
     return map_time
 
