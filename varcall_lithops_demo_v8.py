@@ -69,13 +69,13 @@ if __name__ == "__main__":
     if args.fasta_bucket is None:
         params['fasta_bucket'] = args.bucket
         
-    params['fastq_chunk_size'] = 4*args.fastq_read_n
+    params['fastq_chunk_size'] = 4*int(args.fastq_read_n)
     
     if args.fastq2 is None:
         params['seq_type'] = "single-end"
     else:
         params['seq_type'] = "paired-end"
-
+        
     arguments = Arguments(**params)
     
     ###################################################################

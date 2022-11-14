@@ -1,7 +1,11 @@
 import shutil
 import os
+from typing import List
 from lithops import Storage
 import re
+import pickle
+from lithops.utils import FuturesList
+from varcall_arguments import Arguments
 
 def create_fasta_chunk_for_runtime(storage: Storage, bucket: str, fasta: dict, byte_range: dict, folder: str, file_name: str):
     data = list(re.finditer(r">.+\n", storage.get_object(bucket=bucket, key=folder+file_name,
@@ -38,3 +42,45 @@ def copy_to_s3(storage: Storage, bucket: str, file_name: str, temp_to_s3: bool, 
             storage.put_object(bucket, destination_key, body=data)
         return destination_key
     return ""
+
+def delete_objects(storage: Storage, bucket: str, file_format: str):
+    """
+    Delete all objects with a given prefix inside a bucket
+    """
+    keys = storage.list_keys(bucket=bucket, prefix=file_format+"/")
+    storage.delete_objects(bucket=bucket, key_list=keys)
+
+def load_cache(filename: str) -> FuturesList:
+    """
+    Load a futures local file from previous execution
+    """
+    if (os.path.isfile(filename)):
+        file = open(filename, 'rb')
+        futures = pickle.load(file)
+        file.close()
+        return futures
+    else:
+        return 0
+    
+def dump_cache(filename: str, futures: FuturesList):
+    """
+    Store the lithops futures variable in local storage
+    """
+    file = open(filename, 'wb')
+    pickle.dump(futures, file)
+    file.close()
+    
+def delete_intermediate_files(storage: Storage, args:Arguments, cloud_prefixes: List[str], cache_files: List[str]):
+    """
+    Delete a list of cloud and local files
+    """
+    #Delete cloud files
+    for prefix in cloud_prefixes:
+        keys = storage.list_keys(args.bucket, prefix)
+        for key in keys:
+            storage.delete_object(args.bucket, key)
+    
+    #Delete local files        
+    for file in cache_files:
+        if (os.path.isfile(file)):
+            os.remove(file)

@@ -4,6 +4,12 @@ import lithops
 import subprocess as sp
 from alignment_mapper import AlignmentMapper
 from varcall_arguments import Arguments
+import os
+import aux_functions as af
+
+map1_cachefile = '/tmp/lithops_map1_checkpoint'
+correction_cachefile = '/tmp/lithops_correction_checkpoint'
+map2_cachefile = '/tmp/lithops_map2_checkpoint'
 
 def index_correction_map(setname: str, bucket: str, storage: Storage) -> int:
     """
@@ -26,13 +32,6 @@ def index_correction_map(setname: str, bucket: str, storage: Storage) -> int:
     # Upload corrected index to storage
     storage.upload_file('/tmp/'+setname+'.txt', bucket, 'correctedIndex/'+setname+'.txt')
     return 0  
-
-def delete_objects(storage: Storage, bucket: str, file_format: str):
-    """
-    Delete all objects with a given prefix inside a bucket
-    """
-    keys = storage.list_keys(bucket=bucket, prefix=file_format+"/")
-    storage.delete_objects(bucket=bucket, key_list=keys)
         
 def map_reduce(args: Arguments, iterdata: list, map_func: AlignmentMapper, num_chunks: int) -> float:
     ###################################################################
@@ -48,7 +47,7 @@ def map_reduce(args: Arguments, iterdata: list, map_func: AlignmentMapper, num_c
     if args.skip_map == "False":
         # Delete old files
         print("Deleting previous mapper outputs...")
-        delete_objects(storage, args.bucket, args.file_format)
+        af.delete_objects(storage, args.bucket, args.file_format)
 
     print("Running Map Phase... " + str(len(iterdata)) + " functions")
     
@@ -59,41 +58,77 @@ def map_reduce(args: Arguments, iterdata: list, map_func: AlignmentMapper, num_c
         ###################################################################
         #### MAP: STAGE 1
         ###################################################################
-        print("map phase - single iterdata set")
-        fexec.map(map_func.map_alignment1, iterdata, timeout=int(args.func_timeout_map))
-        first_map_results = fexec.get_result()
+        print("PROCESSING MAP: STAGE 1")
+        
+        #Load futures from previous execution
+        map1_futures = af.load_cache(map1_cachefile)
+        
+        #Execute first map if futures were not found
+        if(not map1_futures):
+            map1_futures = fexec.map(map_func.map_alignment1, iterdata, timeout=int(args.func_timeout_map))
+        
+        #Get results either from the old futures or the new execution
+        first_map_results = fexec.get_result(fs=map1_futures)
+        
+        #Dump futures into file
+        af.dump_cache(map1_cachefile, map1_futures)
+        
         
         ###################################################################
         #### MAP: GENERATE CORRECTED INDEXES
         ###################################################################
-        # Generate the iterdata for index correction
-        index_iterdata = []
-        for i in range(num_chunks):
-            index_iterdata.append({'setname': args.fq_seqname+'_fq'+str(i+1), 'bucket': str(args.bucket)})
+        print("PROCESSING INDEX CORRECTION")
         
-        # Index correction
-        fexec.map(index_correction_map, index_iterdata, timeout=int(args.func_timeout_map))
-        corrections_results = fexec.get_result()
+        #Load futures from previous execution  
+        correction_futures = af.load_cache(correction_cachefile)
+        
+        #Execute correction if futures were not found 
+        if(not correction_futures):
+            # Generate the iterdata for index correction
+            index_iterdata = []
+            for i in range(num_chunks):
+                index_iterdata.append({'setname': args.fq_seqname+'_fq'+str(i+1), 'bucket': str(args.bucket)})
+            
+            # Execute index correction
+            correction_futures = fexec.map(index_correction_map, index_iterdata, timeout=int(args.func_timeout_map))
+        
+        #Get results either from the old futures or the new execution    
+        corrections_results = fexec.get_result(fs=correction_futures)
+        
+        #Dump futures into file
+        af.dump_cache(correction_cachefile, correction_futures)
+        
         
         ###################################################################
         #### MAP: STAGE 2
         ###################################################################
-        # Generate new iterdata
-        newiterdata = []
-        for worker in first_map_results:
-            newiterdata.append({
-                'fasta_chunk': worker[0],
-                'fastq_chunk': worker[1],
-                'corrected_map_index_file': worker[2].split("-")[0]+".txt",
-                'filtered_map_file': worker[3],
-                'base_name': worker[4],
-                'old_id': worker[5]
-            })
+        print("PROCESSING MAP: STAGE 2")
         
-        # Execute second stage of map
-        fexec.map(map_func.map_alignment2, newiterdata, timeout=int(args.func_timeout_map))
-        map_results = fexec.get_result()
-        fexec.plot()
+        #Load futures from previous execution 
+        map2_futures = af.load_cache(map2_cachefile)
+        
+        #Execute correction if futures were not found    
+        if(not map2_futures):
+            # Generate new iterdata
+            newiterdata = []
+            for worker in first_map_results:
+                newiterdata.append({
+                    'fasta_chunk': worker[0],
+                    'fastq_chunk': worker[1],
+                    'corrected_map_index_file': worker[2].split("-")[0]+".txt",
+                    'filtered_map_file': worker[3],
+                    'base_name': worker[4],
+                    'old_id': worker[5]
+                })
+            
+            # Execute second stage of map
+            map2_futures = fexec.map(map_func.map_alignment2, newiterdata, timeout=int(args.func_timeout_map))
+        
+        #Get results either from the old futures or the new execution     
+        map_results = fexec.get_result(fs=map2_futures)
+        
+        #Dump futures into file
+        af.dump_cache(map2_cachefile, map2_futures)
                             
     else:   # Skip map and get keys from previous run
         print("skipping map phase and retrieving existing keys")
@@ -104,15 +139,7 @@ def map_reduce(args: Arguments, iterdata: list, map_func: AlignmentMapper, num_c
     map_time = end - start
 
     #Delete intermediate files
-    keys = storage.list_keys(args.bucket, "map_index_files/")
-    for key in keys:
-        storage.delete_object(args.bucket, key)
-    keys = storage.list_keys(args.bucket, "correctedIndex/")
-    for key in keys:
-        storage.delete_object(args.bucket, key)
-    keys = storage.list_keys(args.bucket, "filtered_map_files/")
-    for key in keys:
-        storage.delete_object(args.bucket, key)
+    af.delete_intermediate_files(storage, args, ['map_index_files/', 'correctedIndex/', 'filtered_map_files/'], [map1_cachefile, map2_cachefile, correction_cachefile])
     
     return map_time
 
