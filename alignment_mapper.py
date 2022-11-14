@@ -24,7 +24,7 @@ class AlignmentMapper:
     ###################################################################
 
 
-    def map_alignment1(self, id: int, fasta_chunk: dict, fastq_chunk: str, storage: Storage):
+    def map_alignment1(self, id: int, fasta_chunk: dict, fastq_chunk: str, exec_param: str, storage: Storage):
         """
         First map function to filter and map fasta + fastq chunks. Some intermediate files
         are uploaded into the cloud storage for subsequent index correction, after which
@@ -74,16 +74,16 @@ class AlignmentMapper:
             zf.write(filtered_map_file)
         
         # Copy intermediate files to storage for index correction       
-        filtered_map_file = aux.copy_to_s3(storage, self.args.bucket, zipname, True, 'filtered_map_files/')
-        filtered_map_file = filtered_map_file.replace("filtered_map_files/", "")
+        filtered_map_file = aux.copy_to_s3(storage, self.args.bucket, zipname, True, f'filtered_map_files/{exec_param}/')
+        filtered_map_file = filtered_map_file.replace(f"filtered_map_files/{exec_param}/", "")
         
-        map_index_file = aux.copy_to_s3(storage, self.args.bucket, map_index_file, True, 'map_index_files/')
-        map_index_file = map_index_file.replace("map_index_files/", "")
+        map_index_file = aux.copy_to_s3(storage, self.args.bucket, map_index_file, True, f'map_index_files/{exec_param}/')
+        map_index_file = map_index_file.replace(f"map_index_files/{exec_param}/", "")
                 
         return fasta_chunk, fastq_chunk, map_index_file, filtered_map_file, base_name, id
 
 
-    def map_alignment2(self, old_id: int, fasta_chunk: dict, fastq_chunk: str, corrected_map_index_file: str, filtered_map_file: str, base_name: str, storage: Storage):
+    def map_alignment2(self, old_id: int, fasta_chunk: dict, fastq_chunk: str, corrected_map_index_file: str, filtered_map_file: str, base_name: str, exec_param: str, storage: Storage):
 
         """
         Second map  function, executed after the previous map function (map_alignment1) and the index correction.
@@ -92,8 +92,8 @@ class AlignmentMapper:
         ###################################################################
         #### RECOVER DATA FROM PREVIOUS MAP
         ###################################################################
-        corrected_map_index_file = aux.copy_to_runtime(storage, self.args.bucket, 'corrected_index/', corrected_map_index_file)
-        filtered_map_file = aux.copy_to_runtime(storage, self.args.bucket, 'filtered_map_files/', filtered_map_file)
+        corrected_map_index_file = aux.copy_to_runtime(storage, self.args.bucket, f'corrected_index/{exec_param}/', corrected_map_index_file)
+        filtered_map_file = aux.copy_to_runtime(storage, self.args.bucket, f'filtered_map_files/{exec_param}/', filtered_map_file)
         
         fasta_folder_file = fasta_chunk['key_fasta'].split("/") 
         fasta = aux.copy_to_runtime(storage, self.args.fasta_bucket, fasta_folder_file[0]+"/", fasta_folder_file[1], 
@@ -118,7 +118,7 @@ class AlignmentMapper:
         ###################################################################
         #### CONVERT MPILEUP TO PARQUET / CSV
         ###################################################################
-        format_key, text_key = self.mpileup_conversion(mpileup_file, fasta_chunk, fastq_chunk, storage)
+        format_key, text_key = self.mpileup_conversion(mpileup_file, fasta_chunk, fastq_chunk, exec_param, storage)
         
         return format_key, text_key
         
@@ -144,7 +144,7 @@ class AlignmentMapper:
         return fastq1, fastq2, base_name
     
     
-    def mpileup_conversion(self, mpileup_file: str, fasta_chunk: dict, fastq_chunk: str, storage: Storage) -> Tuple [str, str]:
+    def mpileup_conversion(self, mpileup_file: str, fasta_chunk: dict, fastq_chunk: str, exec_param: str, storage: Storage) -> Tuple [str, str]:
 
         """
         Convert resulting data to csv/parquet and txt
@@ -171,7 +171,7 @@ class AlignmentMapper:
         # Create intermediate key
         fasta_chunk = str(fasta_chunk['id'])
         max_index = df.iloc[-1]['1']
-        intermediate_key = self.args.file_format + "/" + fasta_key + "_" + fasta_chunk + "-" + fastq_chunk[0] + "_chunk" + str(fastq_chunk[1]["number"]) + "_" + str(max_index)
+        intermediate_key = self.args.file_format + "/" + exec_param + "/" + fasta_key + "_" + fasta_chunk + "-" + fastq_chunk[0] + "_chunk" + str(fastq_chunk[1]["number"]) + "_" + str(max_index)
 
         
         range_index = []

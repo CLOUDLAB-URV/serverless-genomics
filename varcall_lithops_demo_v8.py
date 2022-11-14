@@ -82,6 +82,8 @@ if __name__ == "__main__":
     else:
         params['checkpoints'] = False
         
+    params['execution_name'] = f'{args.fq_seqname}_{args.fasta_file}_{args.fastq_read_n}_{args.fasta_workers}'
+        
     arguments = Arguments(**params)
     
     ###################################################################

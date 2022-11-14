@@ -12,6 +12,7 @@ class Arguments():
     fasta_workers: int
     fastq_chunk_size: int
     seq_type: str
+    execution_name: str
     
     ###################################################################
     #### OPTIONAL VARIABLES

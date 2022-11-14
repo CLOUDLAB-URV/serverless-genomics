@@ -48,19 +48,21 @@ def load_cache(filename: str, args:Arguments) -> FuturesList:
     """
     Load a futures local file from previous execution
     """
-    if os.path.isfile(filename) and args.checkpoints:
-        file = open(filename, 'rb')
+    if os.path.isfile(f'/tmp/{args.execution_name}/{filename}') and args.checkpoints:
+        file = open(f'/tmp/{args.execution_name}/{filename}', 'rb')
         futures = pickle.load(file)
         file.close()
         return futures
     else:
         return 0
     
-def dump_cache(filename: str, futures: FuturesList):
+def dump_cache(filename: str, futures: FuturesList, args:Arguments):
     """
     Store the lithops futures variable in local storage
     """
-    file = open(filename, 'wb')
+    if not os.path.exists(f'/tmp/{args.execution_name}'):
+        os.makedirs(f'/tmp/{args.execution_name}')
+    file = open(f'/tmp/{args.execution_name}/{filename}', 'wb')
     pickle.dump(futures, file)
     file.close()
     

@@ -7,18 +7,18 @@ from varcall_arguments import Arguments
 import os
 import aux_functions as af
 
-map1_cachefile = '/tmp/lithops_map1_checkpoint'
-correction_cachefile = '/tmp/lithops_correction_checkpoint'
-map2_cachefile = '/tmp/lithops_map2_checkpoint'
+map1_cachefile = 'lithops_map1_checkpoint'
+correction_cachefile = 'lithops_correction_checkpoint'
+map2_cachefile = 'lithops_map2_checkpoint'
 
-def index_correction_map(setname: str, bucket: str, storage: Storage) -> int:
+def index_correction_map(setname: str, bucket: str, exec_param: str, storage: Storage) -> int:
     """
     Corrects the index after the first map iteration. 
     All the set files must have the prefix "map_index_files/".
     Corrected indices will be stored with the prefix "corrected_index/".
     """
     # Download all files related to this set
-    filelist = storage.list_keys(bucket, "map_index_files/"+setname)
+    filelist = storage.list_keys(bucket, f'map_index_files/{exec_param}/{setname}')
     for file in filelist:
         local_file = file.split("/")[-1]
         storage.download_file(bucket, file, '/tmp/'+local_file)
@@ -30,7 +30,7 @@ def index_correction_map(setname: str, bucket: str, storage: Storage) -> int:
     result2 = sp.run(cmd2, shell=True, check=True, universal_newlines=True)
     
     # Upload corrected index to storage
-    storage.upload_file('/tmp/'+setname+'.txt', bucket, 'corrected_index/'+setname+'.txt')
+    storage.upload_file('/tmp/'+setname+'.txt', bucket, f'corrected_index/{exec_param}/{setname}.txt')
     return 0  
         
 def map_reduce(args: Arguments, iterdata: list, map_func: AlignmentMapper, num_chunks: int) -> float:
@@ -46,7 +46,7 @@ def map_reduce(args: Arguments, iterdata: list, map_func: AlignmentMapper, num_c
     if args.skip_map == "False":
         # Delete old files
         print("Deleting previous mapper outputs...")
-        af.delete_files(storage, args, cloud_prefixes=[args.file_format])
+        af.delete_files(storage, args, cloud_prefixes=[f'{args.file_format}/{args.execution_name}/'])
 
     print("Running Map Phase... " + str(len(iterdata)) + " functions")
     
@@ -70,7 +70,7 @@ def map_reduce(args: Arguments, iterdata: list, map_func: AlignmentMapper, num_c
         first_map_results = fexec.get_result(fs=map1_futures)
         
         #Dump futures into file
-        af.dump_cache(map1_cachefile, map1_futures)
+        af.dump_cache(map1_cachefile, map1_futures, args)
         
         
         ###################################################################
@@ -86,7 +86,7 @@ def map_reduce(args: Arguments, iterdata: list, map_func: AlignmentMapper, num_c
             # Generate the iterdata for index correction
             index_iterdata = []
             for i in range(num_chunks):
-                index_iterdata.append({'setname': args.fq_seqname+'_fq'+str(i+1), 'bucket': str(args.bucket)})
+                index_iterdata.append({'setname': args.fq_seqname+'_fq'+str(i+1), 'bucket': str(args.bucket), 'exec_param': args.execution_name})
             
             # Execute index correction
             correction_futures = fexec.map(index_correction_map, index_iterdata, timeout=int(args.func_timeout_map))
@@ -95,7 +95,7 @@ def map_reduce(args: Arguments, iterdata: list, map_func: AlignmentMapper, num_c
         corrections_results = fexec.get_result(fs=correction_futures)
         
         #Dump futures into file
-        af.dump_cache(correction_cachefile, correction_futures)
+        af.dump_cache(correction_cachefile, correction_futures, args)
         
         
         ###################################################################
@@ -117,7 +117,8 @@ def map_reduce(args: Arguments, iterdata: list, map_func: AlignmentMapper, num_c
                     'corrected_map_index_file': worker[2].split("-")[0]+".txt",
                     'filtered_map_file': worker[3],
                     'base_name': worker[4],
-                    'old_id': worker[5]
+                    'old_id': worker[5],
+                    'exec_param': args.execution_name
                 })
             
             # Execute second stage of map
@@ -127,7 +128,7 @@ def map_reduce(args: Arguments, iterdata: list, map_func: AlignmentMapper, num_c
         map_results = fexec.get_result(fs=map2_futures)
         
         #Dump futures into file
-        af.dump_cache(map2_cachefile, map2_futures)
+        af.dump_cache(map2_cachefile, map2_futures, args)
                             
     else:   # Skip map and get keys from previous run
         print("skipping map phase and retrieving existing keys")
@@ -138,7 +139,10 @@ def map_reduce(args: Arguments, iterdata: list, map_func: AlignmentMapper, num_c
     map_time = end - start
 
     #Delete intermediate files
-    af.delete_files(storage, args, cloud_prefixes=['map_index_files/', 'corrected_index/', 'filtered_map_files/'], local_files=[map1_cachefile, map2_cachefile, correction_cachefile])
+    af.delete_files(storage, args,
+                    cloud_prefixes=[f'map_index_files/{args.execution_name}/', f'corrected_index/{args.execution_name}/', f'filtered_map_files/{args.execution_name}/'],
+                    local_files=[f'/tmp/{args.execution_name}/{map1_cachefile}', f'/tmp/{args.execution_name}/{map2_cachefile}', f'/tmp/{args.execution_name}/{correction_cachefile}'])
+
     
     return map_time
 
