@@ -64,7 +64,7 @@ class PipelineCaller:
             for fastq_key in list_fastq:
                 num_chunks += 1
                 for i, chunk in enumerate(fasta_chunks):
-                    iterdata.append({'fasta_chunk': {'key_fasta': fasta_file_path, 'key_index': fasta_index, 'id': i, 'chunk': chunk}, 'fastq_chunk': fastq_key}) 
+                    iterdata.append({'fasta_chunk': {'key_fasta': fasta_file_path, 'key_index': fasta_index, 'id': i, 'chunk': chunk}, 'fastq_chunk': fastq_key, 'exec_param': args.execution_name}) 
 
             # Limit the length of iterdata if iterdata_n is not null.
             if iterdata_n is not None and iterdata_n != "all":
