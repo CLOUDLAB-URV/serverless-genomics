@@ -171,42 +171,29 @@ class FunctionsFastaIndex:
                 sequence = index.readline()
         return sequences
 
-
-    def __generate_info_seq(self, args, values, data_index, i):
-        try: 
-            next_val = data_index[i+1].split(' ')
-            last_byte_plus = int(next_val[1])-1 if next_val[0] != values[0] else int(next_val[2])-1
-        except:
-            last_byte_plus = int(self.storage.head_object(args.bucket, self.path_fasta)['content-length']) - 1
-        return {'offset_head': int(values[1]), 'offset_base':  int(values[2]), 'last_byte+': last_byte_plus}
-
     def get_chunks(self, args: Arguments):
         data_index = []
         fasta_chunks = []
         last_seq = ""        
         data_index = self.storage.get_object(args.bucket, self.path_index_file).decode('utf-8').split('\n')
-
         is_1r_seq_chunk = True 
         last_seq = data_index[0].split(' ')
         for i, sequence in enumerate(data_index):                    
             values = sequence.split(' ')
             if is_1r_seq_chunk:
-                fa_chunk = [self.__generate_info_seq(args, last_seq, data_index, i)]
-                is_1r_seq_chunk = False
-            
+                fa_chunk = {'offset_head': int(last_seq[1]), 'offset_base':  int(last_seq[2])}
+                is_1r_seq_chunk = False  
             if last_seq[4] != values[4]:
-                fa_chunk.append(self.__generate_info_seq(args, last_seq, data_index, i))
+                fa_chunk['last_byte+'] = int(values[1])-1 if last_seq[0] != values[0] else int(values[2])-1
                 fasta_chunks.append(fa_chunk)
                 is_1r_seq_chunk = True
 
             last_seq = values
         if is_1r_seq_chunk:
-            aux = self.__generate_info_seq(args, last_seq, data_index, i)
-            fasta_chunks.append([aux, aux])
+            fasta_chunks.append({'offset_head': int(last_seq[1]), 'offset_base':  int(last_seq[2]), 'last_byte+': int(self.storage.head_object(args.bucket, self.path_fasta)['content-length']) - 1})
         else:
-            fa_chunk.append(self.__generate_info_seq(args, last_seq, data_index, i))
+            fa_chunk['last_byte+'] = int(self.storage.head_object(args.bucket, self.path_fasta)['content-length']) - 1
             fasta_chunks.append(fa_chunk)
-
         return fasta_chunks
 
 
