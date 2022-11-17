@@ -47,7 +47,7 @@ class AlignmentMapper:
         ###################################################################
         fasta_folder_file = fasta_chunk['key_fasta'].split("/")
         fasta = aux.copy_to_runtime(storage, self.args.fasta_bucket, fasta_folder_file[0]+"/", fasta_folder_file[1], 
-                                {'Range': f"bytes={fasta_chunk['chunk'][0]['offset_base']}-{fasta_chunk['chunk'][1]['last_byte+']}"}, fasta_chunk) # Download fasta chunk 
+                                {'Range': f"bytes={fasta_chunk['chunk']['offset_base']}-{fasta_chunk['chunk']['last_byte+']}"}, fasta_chunk) # Download fasta chunk 
     
         gem_ref_nosuffix = os.path.splitext(fasta)[0]
         gem_ref = gem_ref_nosuffix + '.gem'
@@ -97,7 +97,7 @@ class AlignmentMapper:
         
         fasta_folder_file = fasta_chunk['key_fasta'].split("/") 
         fasta = aux.copy_to_runtime(storage, self.args.fasta_bucket, fasta_folder_file[0]+"/", fasta_folder_file[1], 
-                                {'Range': f"bytes={fasta_chunk['chunk'][0]['offset_base']}-{fasta_chunk['chunk'][1]['last_byte+']}"}, fasta_chunk) # Download fasta chunk
+                                {'Range': f"bytes={fasta_chunk['chunk']['offset_base']}-{fasta_chunk['chunk']['last_byte+']}"}, fasta_chunk) # Download fasta chunk
         
         with zipfile.ZipFile(filtered_map_file) as zf:
             zf.extractall("/")
