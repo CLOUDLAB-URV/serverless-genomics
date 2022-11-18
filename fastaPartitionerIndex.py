@@ -134,7 +134,7 @@ class FunctionsFastaIndex:
     def get_info_sequence(self, identifier):
         length = offset_head = offset = None
         if identifier != '':
-            with open(self.data_path, 'r') as index:
+            with open(self.path_index_file, 'r') as index:
                 sequence = index.readline()
                 while sequence:
                     if identifier in sequence:
@@ -152,14 +152,14 @@ class FunctionsFastaIndex:
 
     def get_sequences_of_range(self, min_range, max_range):
         sequences = []
-        with open(self.data_path, 'r') as index:
-            sequence = index.readline()
+        with open(self.path_index_file, 'r') as index:
+            sequence = index.readline().replace('\n', '')
             while sequence and int(sequence.split(' ')[2]) < min_range:
-                sequence = index.readline()
+                sequence = index.readline().replace('\n', '')
 
             while sequence and int(sequence.split(' ')[2]) < max_range:
                 sequences.append(sequence)
-                sequence = index.readline()
+                sequence = index.readline().replace('\n', '')
         return sequences
 
     def get_chunks(self, args: Arguments):
