@@ -11,16 +11,17 @@ class FastaPartitioner:
         self.storage = storage
         self.bucket = bucket
 
-    def __get_length(self, min_range, content, data, start_base, end_base, id):
+    def __get_length(self, min_range, content, data, start_base, end_base):
         start_base -= min_range
         end_base -= min_range
         len_base = len(data[start_base:end_base].replace('\n', ''))
         # name_id offset_head offset_bases ->
-        # name_id offset_head offset_bases len_bases id
-        content[-1] = f'{content[-1]} {len_base} {str(id)}'
+        # name_id offset_head offset_bases len_bases
+        content[-1] = f'{content[-1]} {len_base}'
 
     # Generate metadata from fasta file
     def generate_chunks(self, id, key, chunk_size, obj_size, partitions):
+        startTime = time.time()
         min_range = id * chunk_size
         max_range = int(obj_size) if id == partitions - 1 else (id + 1) * chunk_size
         data = self.storage.get_object(bucket=self.bucket, key=key,
@@ -55,31 +56,28 @@ class FastaPartitioner:
                                 length_base = f"{length_0}"
                                 offset = f'{offset_0}'
                             # >> offset_head offset_bases_split length/s first_line_before_space_or_\n
-                            content.append(f">> <Y> {str(offset)} {length_base} {str(id)} ^{text}^")  # Split sequences
+                            content.append(f">> <Y> {str(offset)} {length_base} ^{text}^")  # Split sequences
                         else:  # When the first header found is false, when in a split stream there is a split header that has a '>' inside (ex: >tr|...o-alpha-(1->5)-L-e...\n)
                             first_sequence = True
                             start = end = -1  # Avoid entering the following condition
                 if prev != start:  # When if the current sequence base is not empty
                     if prev != -1:
-                        self.__get_length(min_range, content, data, prev, start, id)
+                        self.__get_length(min_range, content, data, prev, start)
                     # name_id offset_head offset_bases
                     id_name = m.group().replace('\n', '').split(' ')[0].replace('>', '')
                     content.append(f"{id_name} {str(start)} {str(end)}")
                 prev = end
-            
+
             if len(heads) != 0 and len(ini_heads) != 0 and ini_heads[-1].start() + 1 > heads[
                 -1].start():  # Check if the last head of the current one is cut. (ini_heads[-1].start() + 1): ignore '\n'
                 last_seq_start = ini_heads[-1].start() + min_range + 1  # (... + 1): ignore '\n'
-                self.__get_length(min_range, content, data, prev, last_seq_start, id) # Add length of bases to last sequence
+                self.__get_length(min_range, content, data, prev, last_seq_start)  # Add length of bases to last sequence
                 text = data[last_seq_start - min_range::]
                 # [<->|<_>]name_id_split offset_head
                 content.append(
                     f"{'<-' if ' ' in text else '<_'}{text.split(' ')[0]} {str(last_seq_start)}")  # if '<->' there is all id
             else:  # Add length of bases to last sequence
-                self.__get_length(min_range, content, data, prev, max_range, id)
-        elif data:
-            length = len(data.replace('\n', ''))
-            content.append(f"<_-_> {min_range} {length} {id}")
+                self.__get_length(min_range, content, data, prev, max_range)
         return content
     
 
@@ -172,28 +170,50 @@ class FunctionsFastaIndex:
         return sequences
 
     def get_chunks(self, args: Arguments):
-        data_index = []
         fasta_chunks = []
-        last_seq = ""        
-        data_index = self.storage.get_object(args.bucket, self.path_index_file).decode('utf-8').split('\n')
-        is_1r_seq_chunk = True 
-        last_seq = data_index[0].split(' ')
-        for i, sequence in enumerate(data_index):                    
-            values = sequence.split(' ')
-            if is_1r_seq_chunk:
-                fa_chunk = {'offset_head': int(last_seq[1]), 'offset_base':  int(last_seq[2])}
-                is_1r_seq_chunk = False  
-            if last_seq[4] != values[4]:
-                fa_chunk['last_byte+'] = int(values[1])-1 if last_seq[0] != values[0] else int(values[2])-1
-                fasta_chunks.append(fa_chunk)
-                is_1r_seq_chunk = True
+        try:
+            fasta = self.storage.head_object(args.bucket, self.path_fasta_file)
+            total_size = int(fasta['content-length'])
+            fa_chunk_size = int(total_size / int(args.fasta_workers))
+            data_index = self.storage.get_object(args.bucket, self.path_index_file).decode('utf-8').split('\n')
+            size_data = len(data_index)
+            j = 0
+            min = fa_chunk_size * j
+            max = fa_chunk_size * (j + 1)
+            i = 0
+            while max <= total_size:
+                # Si el min está en el head
+                # Si el min esta en la base o mas
+                if int(data_index[i].split(' ')[1]) <= min < int(data_index[i].split(' ')[2]):   # In the head
+                    fa_chunk = {'offset_head': int(data_index[i].split(' ')[1]), 'offset_base': int(data_index[i].split(' ')[2])}
+                elif i == size_data - 1 or min < int(data_index[i + 1].split(' ')[1]):  # In the base
+                    fa_chunk = {'offset_head': int(data_index[i].split(' ')[1]), 'offset_base': min}
+                elif i < size_data:
+                    i += 1
+                    while i + 1 < size_data and min > int(data_index[i + 1].split(' ')[1]):
+                        i += 1
+                    if min < int(data_index[i].split(' ')[2]):
+                        fa_chunk = {'offset_head': int(data_index[i].split(' ')[1]), 'offset_base': int(data_index[i].split(' ')[2])}
+                    else:
+                        fa_chunk = {'offset_head': int(data_index[i].split(' ')[1]), 'offset_base': min}
 
-            last_seq = values
-        if is_1r_seq_chunk:
-            fasta_chunks.append({'offset_head': int(last_seq[1]), 'offset_base':  int(last_seq[2]), 'last_byte+': int(self.storage.head_object(args.bucket, self.path_fasta)['content-length']) - 1})
-        else:
-            fa_chunk['last_byte+'] = int(self.storage.head_object(args.bucket, self.path_fasta)['content-length']) - 1
-            fasta_chunks.append(fa_chunk)
+                if i == size_data - 1 or max < int(data_index[i+1].split(' ')[1]):
+                    fa_chunk['last_byte+'] = max - 1 if fa_chunk_size * (j + 2) <= total_size else total_size - 1
+                else:
+                    if max < int(data_index[i+1].split(' ')[2]):  # Split in the middle of head
+                        fa_chunk['last_byte+'] = int(data_index[i+1].split(' ')[1]) - 1
+                        i += 1
+                    elif i < size_data:
+                        i += 1
+                        while i + 1 < size_data and max > int(data_index[i + 1].split(' ')[1]):
+                            i += 1
+                        fa_chunk['last_byte+'] = max - 1
+                fasta_chunks.append(fa_chunk)
+                j += 1
+                min = fa_chunk_size * j
+                max = fa_chunk_size * (j + 1)
+        except Exception as e:
+            print(e)
         return fasta_chunks
 
 
