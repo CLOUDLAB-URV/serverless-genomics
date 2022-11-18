@@ -182,8 +182,6 @@ class FunctionsFastaIndex:
             max = fa_chunk_size * (j + 1)
             i = 0
             while max <= total_size:
-                # Si el min está en el head
-                # Si el min esta en la base o mas
                 if int(data_index[i].split(' ')[1]) <= min < int(data_index[i].split(' ')[2]):   # In the head
                     fa_chunk = {'offset_head': int(data_index[i].split(' ')[1]), 'offset_base': int(data_index[i].split(' ')[2])}
                 elif i == size_data - 1 or min < int(data_index[i + 1].split(' ')[1]):  # In the base
