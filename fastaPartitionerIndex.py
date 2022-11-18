@@ -21,7 +21,6 @@ class FastaPartitioner:
 
     # Generate metadata from fasta file
     def generate_chunks(self, id, key, chunk_size, obj_size, partitions):
-        startTime = time.time()
         min_range = id * chunk_size
         max_range = int(obj_size) if id == partitions - 1 else (id + 1) * chunk_size
         data = self.storage.get_object(bucket=self.bucket, key=key,
@@ -87,40 +86,34 @@ def map_funct(storage, bucket_name, id, key, chunk_size, obj_size, partitions):
 
 
 def reduce_generate_chunks(results):
-        if len(results) > 1:
-            # results = list(filter(None, results))
-            for i, list_seq in enumerate(results):
-                if i > 0:
-                    list_prev = results[i - 1]
-                    if list_prev and list_seq: # If it is not empty the current and previous dictionary
-                        param = list_seq[0].split(' ')
-                        seq_prev = list_prev[-1]
-                        param_seq_prev = seq_prev.split(' ')
-                        if '>>' in list_seq[0]:  # If the first sequence is split
-                            if '<->' in seq_prev or '<_>' in seq_prev:
-                                if '<->' in list_prev[-1]:  # If the split was after a space, then there is all id
-                                    name_id = param_seq_prev[0].replace('<->', '')
-                                else:
-                                    name_id = param_seq_prev[0].replace('<_>', '') + param[5].replace('^', '')
-                                length = param[3].split('-')[1]
-                                offset_head = param_seq_prev[1]
-                                offset_base = param[2].split('-')[1]
-                                list_prev.pop()  # Remove previous sequence
+    if len(results) > 1:
+        results = list(filter(None, results))
+        for i, list_seq in enumerate(results):
+            if i > 0:
+                list_prev = results[i - 1]
+                if list_prev and list_seq:  # If it is not empty the current and previous dictionary
+                    param = list_seq[0].split(' ')
+                    seq_prev = list_prev[-1]
+                    param_seq_prev = seq_prev.split(' ')
+                    if '>>' in list_seq[0]:  # If the first sequence is split
+                        if '<->' in seq_prev or '<_>' in seq_prev:
+                            if '<->' in list_prev[-1]:  # If the split was after a space, then there is all id
+                                name_id = param_seq_prev[0].replace('<->', '')
                             else:
-                                length = param[3].split('-')[0]
-                                name_id = param_seq_prev[0]
-                                offset_head = param_seq_prev[1]
-                                offset_base = param[2].split('-')[0]
-                            list_seq[0] = list_seq[0].replace(f' {param[5]}', '')  # Remove 5rt param
+                                name_id = param_seq_prev[0].replace('<_>', '') + param[4].replace('^', '')
+                            length = param[3].split('-')[1]
+                            offset_head = param_seq_prev[1]
+                            offset_base = param[2].split('-')[1]
+                            list_prev.pop()  # Remove previous sequence
+                            list_seq[0] = list_seq[0].replace(f' {param[4]}', '')  # Remove 5rt param
                             list_seq[0] = list_seq[0].replace(f' {param[2]} ',
-                                                          f' {offset_base} ')  # [offset_base_0-offset_base_1|offset_base] -> offset_base
-                            list_seq[0] = list_seq[0].replace(f' {param[3]} ', f' {length} ')  # [length_0-length_1|length] -> length
+                                                                f' {offset_base} ')  # [offset_base_0-offset_base_1|offset_base] -> offset_base
+                            list_seq[0] = list_seq[0].replace(f' {param[3]} ',
+                                                                f' {length} ')  # [length_0-length_1|length] -> length
                             list_seq[0] = list_seq[0].replace(' <Y> ', f' {offset_head} ')  # Y --> offset_head
                             list_seq[0] = list_seq[0].replace('>> ', f'{name_id} ')  # '>>' -> name_id
-                        elif '<_-_>' in list_seq[0]:
-                            list_seq[0] = list_seq[0].replace(f'<_-_> ',
-                                                              f'{param_seq_prev[0]} {param_seq_prev[1]} ')
-            results = list(filter(None, results))
+                        else:
+                            list_seq.pop(0)
         return results
 
     
