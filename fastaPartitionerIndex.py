@@ -126,10 +126,10 @@ def generate_index_file(bucket_name, data, fasta_folder, file_name):
 
 
 class FunctionsFastaIndex:
-    def __init__(self, path_index_file, path_fasta):
+    def __init__(self, path_index_file, path_fasta_file):
         self.path_index_file = path_index_file
-        self.path_fasta = path_fasta
-        self.storage = lithops.Storage() 
+        self.path_fasta_file = path_fasta_file
+        self.storage = lithops.Storage()  
 
     def get_info_sequence(self, identifier):
         length = offset_head = offset = None
