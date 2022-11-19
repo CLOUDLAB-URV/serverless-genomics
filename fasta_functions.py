@@ -9,7 +9,7 @@ def prepare_fasta(args: Arguments):
     """
     
     storage = Storage()
-    fasta_index = args.fasta_folder_index + pathlib.Path(args.fasta_file).stem + f'_{args.fasta_workers}.fai'   
+    fasta_index = args.fasta_folder_index + pathlib.Path(args.fasta_file).stem + '.fai'   
     try:
         print("Searching " + args.bucket + "/" + fasta_index)
         list_files_index = storage.list_keys(args.bucket, prefix=args.fasta_workers)
