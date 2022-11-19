@@ -244,7 +244,7 @@ if __name__ == "__main__":
     results = fexec.get_result()
     fexec.clean()
 
-    generate_index_file(my_bucket_name, results, fasta_folder, f'{pathlib.Path(my_key).stem}_{n_workers}.fai')
+    generate_index_file(my_bucket_name, results, fasta_folder, f'{pathlib.Path(my_key).stem}.fai')
 
     # print('... Done, generated index')
 
