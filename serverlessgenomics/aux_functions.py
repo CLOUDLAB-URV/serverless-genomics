@@ -5,7 +5,7 @@ from lithops import Storage
 import re
 import pickle
 from lithops.utils import FuturesList
-from varcall_arguments import Arguments
+from .parameters import PipelineParameters
 
 def create_fasta_chunk_for_runtime(storage: Storage, bucket: str, fasta: dict, byte_range: dict, folder: str, file_name: str):
     data = list(re.finditer(r">.+\n", storage.get_object(bucket=bucket, key=folder+file_name,
@@ -44,7 +44,7 @@ def copy_to_s3(storage: Storage, bucket: str, file_name: str, temp_to_s3: bool, 
     return ""
 
 
-def load_cache(filename: str, args:Arguments) -> FuturesList:
+def load_cache(filename: str, args:PipelineParameters) -> FuturesList:
     """
     Load a futures local file from previous execution
     """
@@ -56,7 +56,7 @@ def load_cache(filename: str, args:Arguments) -> FuturesList:
     else:
         return 0
     
-def dump_cache(filename: str, futures: FuturesList, args:Arguments):
+def dump_cache(filename: str, futures: FuturesList, args:PipelineParameters):
     """
     Store the lithops futures variable in local storage
     """
@@ -66,7 +66,7 @@ def dump_cache(filename: str, futures: FuturesList, args:Arguments):
     pickle.dump(futures, file)
     file.close()
     
-def delete_files(storage: Storage, args:Arguments, cloud_prefixes: List[str] = [], local_files: List[str] = []):
+def delete_files(storage: Storage, args:PipelineParameters, cloud_prefixes: List[str] = [], local_files: List[str] = []):
     """
     Delete a list of cloud and local files
     """

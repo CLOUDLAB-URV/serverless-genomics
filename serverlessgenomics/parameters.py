@@ -1,3 +1,4 @@
+import logging
 from dataclasses import dataclass
 
 
@@ -12,7 +13,7 @@ def validate_parameters(params):
     else:
         params['seq_type'] = "paired-end"
 
-    if params['checkpoints'] in ('True', 'true', 'Yes', 'yes', 'y', '1'):
+    if 'checkpoints' in params and params['checkpoints'] in ('True', 'true', 'Yes', 'yes', 'y', '1'):
         params['checkpoints'] = True
     else:
         params['checkpoints'] = False
@@ -72,6 +73,7 @@ class PipelineParameters:
     skip_map: bool = False
     lb_method: str = "select"
     checkpoints: bool = False
+    log_level: int = logging.INFO
 
     # Debug Parameters
     gem_test: bool = False
