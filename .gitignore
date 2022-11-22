@@ -132,3 +132,7 @@ plots/
 dockerfile/
 FastaPartitioner.py
 RUN_TEST.sh
+
+# IDE
+.vscode/
+.idea/

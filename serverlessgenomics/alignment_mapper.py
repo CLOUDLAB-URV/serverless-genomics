@@ -5,15 +5,15 @@ import subprocess as sp
 from typing import Tuple
 import pandas as pd
 from numpy import int64
-import fastq_functions as fq_func
-import aux_functions as aux
-from varcall_arguments import Arguments
+from . import fastq_functions as fq_func
+from . import aux_functions as aux
+from .parameters import PipelineParameters
 from lithops import Storage
 import zipfile
 
 
 class AlignmentMapper:
-    def __init__(self, fasta_chunks_prefix: str, args: Arguments):
+    def __init__(self, fasta_chunks_prefix: str, args: PipelineParameters):
         self.fasta_chunks_prefix = fasta_chunks_prefix
         self.args = args
     

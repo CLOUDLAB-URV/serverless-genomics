@@ -3,7 +3,7 @@ import pathlib
 import re
 import lithops
 import argparse
-from varcall_arguments import Arguments
+from .parameters import PipelineParameters
 
 
 class FastaPartitioner:
@@ -162,7 +162,7 @@ class FunctionsFastaIndex:
                 sequence = index.readline().replace('\n', '')
         return sequences
 
-    def get_chunks(self, args: Arguments):
+    def get_chunks(self, args: PipelineParameters):
         fasta_chunks = []
         try:
             fasta = self.storage.head_object(args.bucket, self.path_fasta_file)
