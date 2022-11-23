@@ -134,32 +134,40 @@ class FunctionsFastaIndex:
     def get_info_sequence(self, identifier):
         length = offset_head = offset = None
         if identifier != '':
-            with open(self.path_index_file, 'r') as index:
-                sequence = index.readline()
-                while sequence:
-                    if identifier in sequence:
-                        param_seq = sequence.split(' ')
+            try:
+                data_index = self.storage.get_object(args.bucket, self.path_index_file).decode('utf-8').split('\n')
+                size_data = len(data_index)
+                i = 0
+                while i < size_data:
+                    if identifier in data_index[i]:
+                        param_seq = data_index[i].split(' ')
                         offset_head = int(param_seq[1])
                         offset = int(param_seq[2])
                         length = int(param_seq[3])
-                        next_seq = index.readline()
-                        while next_seq and identifier in next_seq:
-                            length += int(next_seq.split(' ')[3])
-                            next_seq = index.readline()
+                        i+=1
+                        while i < size_data and identifier in data_index[i]:
+                            length += int(data_index[i].split(' ')[3])
+                            i+=1
                         break
-                    sequence = index.readline()
+            except Exception as e:
+                print(e):
         return {'length': length, 'offset_head': offset_head, 'offset': offset}
 
     def get_sequences_of_range(self, min_range, max_range):
-        sequences = []
-        with open(self.path_index_file, 'r') as index:
-            sequence = index.readline().replace('\n', '')
-            while sequence and int(sequence.split(' ')[2]) < min_range:
-                sequence = index.readline().replace('\n', '')
+        sequences = []= offset = None
+        if identifier != '':
+            try:
+                data_index = self.storage.get_object(args.bucket, self.path_index_file).decode('utf-8').split('\n')
+                size_data = len(data_index)
+                i = 0
+                while i < size_data and int(data_index[i].split(' ')[2]) < min_range:
+                    i+=1
 
-            while sequence and int(sequence.split(' ')[2]) < max_range:
-                sequences.append(sequence)
-                sequence = index.readline().replace('\n', '')
+                while i < size_data and int(data_index[i].split(' ')[2]) < max_range:
+                    sequences.append(data_index[i].replace('\n', ''))
+                    i+=1
+            except Exception as e:
+                print(e):
         return sequences
 
     def get_chunks(self, args: PipelineParameters):
