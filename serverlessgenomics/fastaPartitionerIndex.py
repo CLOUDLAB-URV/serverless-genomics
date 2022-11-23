@@ -154,20 +154,19 @@ class FunctionsFastaIndex:
         return {'length': length, 'offset_head': offset_head, 'offset': offset}
 
     def get_sequences_of_range(self, min_range, max_range):
-        sequences = []= offset = None
-        if identifier != '':
-            try:
-                data_index = self.storage.get_object(args.bucket, self.path_index_file).decode('utf-8').split('\n')
-                size_data = len(data_index)
-                i = 0
-                while i < size_data and int(data_index[i].split(' ')[2]) < min_range:
-                    i+=1
+        sequences = []
+        try:
+            data_index = self.storage.get_object(args.bucket, self.path_index_file).decode('utf-8').split('\n')
+            size_data = len(data_index)
+            i = 0
+            while i < size_data and int(data_index[i].split(' ')[2]) < min_range:
+                i+=1
 
-                while i < size_data and int(data_index[i].split(' ')[2]) < max_range:
-                    sequences.append(data_index[i].replace('\n', ''))
-                    i+=1
-            except Exception as e:
-                print(e):
+            while i < size_data and int(data_index[i].split(' ')[2]) < max_range:
+                sequences.append(data_index[i].replace('\n', ''))
+                i+=1
+        except Exception as e:
+            print(e):
         return sequences
 
     def get_chunks(self, args: PipelineParameters):
