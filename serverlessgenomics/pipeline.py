@@ -9,7 +9,6 @@ from .parameters import PipelineParameters
 import pathlib
 import logging
 from lithops import Storage
-from fastaPartitionerIndex import FunctionsFastaIndex
 
 # map/reduce functions and executor
 from . import map_reduce_caller
