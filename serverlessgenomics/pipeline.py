@@ -33,7 +33,7 @@ class VariantCallingPipeline:
                                     self.parameters.fasta_folder + self.parameters.fasta_file)['content-length']) / int(self.parameters.fasta_workers))
 
         ###################################################################
-        #### 1. GENERATE LIST OF FASTQ CHUNKS (BYTE RANGES)
+        #### GENERATE LIST OF FASTQ CHUNKS (BYTE RANGES)
         ###################################################################
 
         num_spots = 0
@@ -49,17 +49,16 @@ class VariantCallingPipeline:
             print("Number of spots: " + num_spots)
             print("fastq size: " + fastq_size)
 
-        # Generate fastq chunks
         fastq_list = prepare_fastq(self.parameters.fastq_read_n, self.parameters.fq_seqname, num_spots)
 
         ###################################################################
-        #### 2. GENERATE LIST OF FASTA CHUNKS (if not present)
+        #### GENERATE LIST OF FASTA CHUNKS (if not present)
         ###################################################################
 
         fasta_index = prepare_fasta(self.parameters)
 
         ###################################################################
-        #### 3. GENERATE ITERDATA AND PREPROCESSING SUMMARY
+        #### GENERATE ITERDATA AND PREPROCESSING SUMMARY
         ###################################################################
         # The iterdata consists of an array where each element is a pair of a fastq chunk and a fasta chunk.
         # Since each fastq chunk needs to be paired with each fasta chunk, the total number of elements in
@@ -86,13 +85,13 @@ class VariantCallingPipeline:
 
         if not self.parameters.pre_processing_only:
             ###################################################################
-            #### 4. MAP-REDUCE
+            #### MAP-REDUCE
             ###################################################################
             mapfunc = AlignmentMapper(pathlib.Path(self.parameters.fasta_file).stem, self.parameters)
             map_time = map_reduce_caller.map_reduce(self.parameters, iterdata, mapfunc, num_chunks)
 
             ###################################################################
-            #### 5. MAP-REDUCE SUMMARY
+            #### MAP-REDUCE SUMMARY
             ###################################################################
             print("MAP-REDUCE SUMMARY")
             print("map phase: execution_time_total_varcall: " + str(map_time) + "s")
