@@ -10,20 +10,20 @@ class GenerateAlignmentIterdata:
         self.fasta_file_path = fasta_file_path
 
     def __call__(self):
-            """
-            Creates the lithops iterdata from the fasta and fastq chunk lists
-            """
-            # Number of fastq chunks processed. If doing a partial execution, iterdata_n will need to be multiple of the number of fasta chunks
-            # so the index correction is done properly.
-            print("\nStarting phase: iterdata generation")
-            functions = FunctionsFastaIndex(self.fasta_index, self.fasta_file_path)
-            fasta_chunks = functions.get_chunks(self.args)
+        """
+        Creates the lithops iterdata from the fasta and fastq chunk lists
+        """
+        # The iterdata consists of an array where each element is a pair of a fastq chunk and a fasta chunk.
+        # Since each fastq chunk needs to be paired with each fasta chunk, the total number of elements in
+        # iterdata will be n_fastq_chunks * n_fasta_chunks.
+        
+        print("\nStarting phase: iterdata generation")
+        functions = FunctionsFastaIndex(self.fasta_index, self.fasta_file_path)
+        fasta_chunks = functions.get_chunks(self.args)
 
-            iterdata, num_chunks = self.__generate_iterdata(fasta_chunks)
+        iterdata, num_chunks = self.__generate_iterdata(fasta_chunks)
 
-            iterdata, num_chunks = self.__check_number_iterdata(iterdata, fasta_chunks, num_chunks)
-
-            return iterdata, num_chunks
+        return self.__check_iterdata(iterdata, fasta_chunks, num_chunks)
 
     def __generate_iterdata(self, fasta_chunks):
         num_chunks = 0
@@ -36,7 +36,7 @@ class GenerateAlignmentIterdata:
 
         return iterdata, num_chunks
 
-    def __check_number_iterdata(self, iterdata, fasta_chunks, num_chunks):
+    def __check_iterdata(self, iterdata, fasta_chunks, num_chunks):
         n_fasta_chunks = len(fasta_chunks)
         n_fastq = len(self.list_fastq)
         

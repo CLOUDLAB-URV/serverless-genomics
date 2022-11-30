@@ -65,15 +65,15 @@ class FastaPartitionerIndex:
                         param_seq_prev = seq_prev.split(' ')
                         if '>>' in list_seq[0]:  # If the first sequence is split
                             if '<->' in seq_prev or '<_>' in seq_prev:
-                                if '<->' in list_prev[-1]:  # If the split was after a space, then there is all id
+                                if '<->' in seq_prev:  # If the split was after a space, then there is all id
                                     name_id = param_seq_prev[0].replace('<->', '')
                                 else:
                                     name_id = param_seq_prev[0].replace('<_>', '') + param[3].replace('^', '')
-                                list_prev.pop()  # Remove previous sequence   
                                                           
                                 list_seq[0] = self.__rename_seq(list_seq[0], param, name_id, param_seq_prev[1], param[2])
                             else:
-                                list_seq.pop(0)
+                                list_seq[0] = seq_prev
+                            list_prev.pop()  # Remove previous sequence  
         return results
 
     def __rename_seq(sequence, param, name_id, offset_head, offset_base):    
@@ -93,11 +93,12 @@ class FastaPartitionerCaller:
         # Execution   
         fexec = lithops.FunctionExecutor()
 
-        fasta = self.storage.head_object(self.bucket, my_key)
-        chunk_size = int(int(fasta['content-length']) / n_workers)
+        fasta_length = self.storage.head_object(self.bucket, my_key)['content-length']
+        chunk_size = int(int(fasta_length) / n_workers)
         map_iterdata = [{'key': my_key} for _ in range(n_workers)]
         funct = FastaPartitionerIndex(self.bucket)
-        extra_args = {'chunk_size': chunk_size, 'obj_size': fasta['content-length'], 'partitions': n_workers}
+        extra_args = {'chunk_size': chunk_size, 'obj_size': fasta_length, 'partitions': n_workers}
+
         fexec.map_reduce(map_function=funct.generate_chunks, map_iterdata=map_iterdata, extra_args=extra_args, reduce_function=funct.reduce_generate_chunks)        
         index = fexec.get_result()        
         fexec.clean()
@@ -118,38 +119,10 @@ class FunctionsFastaIndex:
         self.path_fasta_file = path_fasta_file
         self.storage = lithops.Storage()  
 
-    def get_info_sequence(self, identifier):
-        offset_head = offset = None
-        if identifier != '':
-            data_index = self.storage.get_object(args.bucket, self.path_index_file).decode('utf-8').split('\n')
-            size_data = len(data_index)
-            i = 0
-            while i < size_data:
-                if identifier in data_index[i]:
-                    param_seq = data_index[i].split(' ')
-                    offset_head = int(param_seq[1])
-                    offset = int(param_seq[2])
-                    i+=1
-                    break
-        return {'offset_head': offset_head, 'offset': offset}
-
-    def get_sequences_of_range(self, min_range, max_range):
-        sequences = []
-        data_index = self.storage.get_object(args.bucket, self.path_index_file).decode('utf-8').split('\n')
-        size_data = len(data_index)
-        i = 0
-        while i < size_data and int(data_index[i].split(' ')[2]) < min_range:
-            i+=1
-
-        while i < size_data and int(data_index[i].split(' ')[2]) < max_range:
-            sequences.append(data_index[i].replace('\n', ''))
-            i+=1
-        return sequences
-
+    
     def get_chunks(self, args: PipelineParameters):
         fasta_chunks = []
-        fasta = self.storage.head_object(args.bucket, self.path_fasta_file)
-        total_size = int(fasta['content-length'])
+        total_size = int(self.storage.head_object(args.bucket, self.path_fasta_file)['content-length'])
         fa_chunk_size = int(total_size / int(args.fasta_workers))
         data_index = self.storage.get_object(args.bucket, self.path_index_file).decode('utf-8').split('\n')
         size_data = len(data_index)
@@ -158,6 +131,7 @@ class FunctionsFastaIndex:
         min = fa_chunk_size * j
         max = fa_chunk_size * (j + 1)
         while max <= total_size:
+            # Find first full/half sequence of the chunk
             if int(data_index[i].split(' ')[1]) <= min < int(data_index[i].split(' ')[2]):   # In the head
                 fa_chunk = {'offset_head': int(data_index[i].split(' ')[1]), 'offset_base': int(data_index[i].split(' ')[2])}
             elif i == size_data - 1 or min < int(data_index[i + 1].split(' ')[1]):  # In the base
@@ -170,7 +144,8 @@ class FunctionsFastaIndex:
                     fa_chunk = {'offset_head': int(data_index[i].split(' ')[1]), 'offset_base': int(data_index[i].split(' ')[2])}
                 else:
                     fa_chunk = {'offset_head': int(data_index[i].split(' ')[1]), 'offset_base': min}
-
+            
+            # Find last full/half sequence of the chunk
             if i == size_data - 1 or max < int(data_index[i + 1].split(' ')[1]):
                 fa_chunk['last_byte+'] = max - 1 if fa_chunk_size * (j + 2) <= total_size else total_size - 1
             else:

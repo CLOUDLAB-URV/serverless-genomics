@@ -5,7 +5,6 @@ from .preprocessing import prepare_fasta, prepare_fastq, GenerateAlignmentIterda
 from .parameters import PipelineParameters
 import pathlib
 import logging
-from lithops import Storage
 
 # map/reduce functions and executor
 from . import map_reduce_caller
@@ -27,20 +26,13 @@ class VariantCallingPipeline:
             log_parameters(self.parameters)
 
     def preprocess(self):
-        storage = Storage()
-        size_chunk_w = int(
-            int(storage.head_object(self.parameters.bucket, 
-                                    self.parameters.fasta_folder + self.parameters.fasta_file)['content-length']) / int(self.parameters.fasta_workers))
-
         ###################################################################
         #### GENERATE LIST OF FASTQ CHUNKS (BYTE RANGES)
         ###################################################################
 
-        num_spots = 0
-        metadata = sra_meta.SraMetadata()
-        arr_seqs = [self.parameters.fq_seqname]
         if self.parameters.datasource == "SRA":
-            accession = metadata.efetch_sra_from_accessions(arr_seqs)
+            metadata = sra_meta.SraMetadata()
+            accession = metadata.efetch_sra_from_accessions([self.parameters.fq_seqname])
             seq_type = accession['pairing'].to_string(index=False)
             num_spots = accession['spots'].to_string(index=False)
             fastq_size = accession['run_size'].to_string(index=False)
@@ -48,6 +40,8 @@ class VariantCallingPipeline:
             print("Sequence type: " + seq_type)
             print("Number of spots: " + num_spots)
             print("fastq size: " + fastq_size)
+        else:
+            num_spots = 0
 
         fastq_list = prepare_fastq(self.parameters.fastq_read_n, self.parameters.fq_seqname, num_spots)
 
@@ -60,9 +54,6 @@ class VariantCallingPipeline:
         ###################################################################
         #### GENERATE ITERDATA AND PREPROCESSING SUMMARY
         ###################################################################
-        # The iterdata consists of an array where each element is a pair of a fastq chunk and a fasta chunk.
-        # Since each fastq chunk needs to be paired with each fasta chunk, the total number of elements in
-        # iterdata will be n_fastq_chunks * n_fasta_chunks.
 
         generate_aligment = GenerateAlignmentIterdata(self.parameters, fastq_list, fasta_index,
                                                       self.parameters.fasta_folder + self.parameters.fasta_file)
