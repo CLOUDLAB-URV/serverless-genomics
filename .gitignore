@@ -129,7 +129,7 @@ dmypy.json
 
 # Ignore until refactoring
 plots/
-dockerfile/
+old_dockerfile/
 FastaPartitioner.py
 RUN_TEST.sh
 
