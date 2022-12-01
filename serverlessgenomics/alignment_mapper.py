@@ -5,8 +5,9 @@ import subprocess as sp
 from typing import Tuple
 import pandas as pd
 from numpy import int64
-from . import fastq_functions as fq_func
+from .preprocessing import fastq_to_mapfun
 from . import aux_functions as aux
+from .utils import copy_to_runtime
 from .parameters import PipelineParameters
 from lithops import Storage
 import zipfile
@@ -34,19 +35,19 @@ class AlignmentMapper:
         # CONTROL VARIABLES 
         fastq_n=re.sub('^[\s|\S]*number\':\s(\d*),[\s|\S]*$', r"\1", str(fastq_chunk))
         func_key=self.args.fq_seqname+"_fq"+fastq_n+"-fa"+str(fasta_chunk['id'])
-
         
         ###################################################################
         #### PROCESSING FASTQ CHUNKS
         ###################################################################
-        # Download fastq chunk depending on source
+       
         fastq1, fastq2, base_name = self.download_fastq(fastq_chunk)
         
         ###################################################################
         #### PROCESSING FASTA CHUNKS
         ###################################################################
+        
         fasta_folder_file = fasta_chunk['key_fasta'].split("/")
-        fasta = aux.copy_to_runtime(storage, self.args.fasta_bucket, fasta_folder_file[0]+"/", fasta_folder_file[1], 
+        fasta = copy_to_runtime(storage, self.args.fasta_bucket, fasta_folder_file[0]+"/", fasta_folder_file[1], 
                                 {'Range': f"bytes={fasta_chunk['chunk']['offset_base']}-{fasta_chunk['chunk']['last_byte+']}"}, fasta_chunk) # Download fasta chunk 
     
         gem_ref_nosuffix = os.path.splitext(fasta)[0]
@@ -57,15 +58,15 @@ class AlignmentMapper:
         ###################################################################
         #### GENERATE ALIGNMENT AND ALIGNMENT INDEX (FASTQ TO MAP)
         ###################################################################
+
         sp.run(['/function/bin/map_index_and_filter_map_file_cmd_awsruntime.sh', gem_ref, fastq1, fastq2, base_name, self.args.datasource, self.args.seq_type], capture_output=True)
 
         # Reorganize file names
-        map_index_file = base_name + "_map.index.txt"
-        os.rename(map_index_file,"/tmp/" + func_key+ "_map.index.txt")
         map_index_file = "/tmp/" + func_key+ "_map.index.txt"
-        old_filtered_map_file = base_name + "_filt_wline_no.map"
+        os.rename(base_name + "_map.index.txt", map_index_file)
+
         filtered_map_file = base_name + "_" + str(id) + "_filt_wline_no.map"
-        os.rename(old_filtered_map_file, filtered_map_file)
+        os.rename(base_name + "_filt_wline_no.map", filtered_map_file)
         
 
         # Compress the filtered map file
@@ -73,12 +74,13 @@ class AlignmentMapper:
         with zipfile.ZipFile(zipname, 'w', compression=zipfile.ZIP_BZIP2, compresslevel=9) as zf:
             zf.write(filtered_map_file)
         
-        # Copy intermediate files to storage for index correction       
-        filtered_map_file = aux.copy_to_s3(storage, self.args.bucket, zipname, True, f'filtered_map_files/{exec_param}/')
-        filtered_map_file = filtered_map_file.replace(f"filtered_map_files/{exec_param}/", "")
-        
+        # Copy intermediate files to storage for index correction             
         map_index_file = aux.copy_to_s3(storage, self.args.bucket, map_index_file, True, f'map_index_files/{exec_param}/')
         map_index_file = map_index_file.replace(f"map_index_files/{exec_param}/", "")
+
+        filtered_map_file = aux.copy_to_s3(storage, self.args.bucket, zipname, True, f'filtered_map_files/{exec_param}/')
+        filtered_map_file = filtered_map_file.replace(f"filtered_map_files/{exec_param}/", "")
+
                 
         return fasta_chunk, fastq_chunk, map_index_file, filtered_map_file, base_name, id
 
@@ -92,11 +94,11 @@ class AlignmentMapper:
         ###################################################################
         #### RECOVER DATA FROM PREVIOUS MAP
         ###################################################################
-        corrected_map_index_file = aux.copy_to_runtime(storage, self.args.bucket, f'corrected_index/{exec_param}/', corrected_map_index_file)
-        filtered_map_file = aux.copy_to_runtime(storage, self.args.bucket, f'filtered_map_files/{exec_param}/', filtered_map_file)
+        corrected_map_index_file = copy_to_runtime(storage, self.args.bucket, f'corrected_index/{exec_param}/', corrected_map_index_file)
+        filtered_map_file = copy_to_runtime(storage, self.args.bucket, f'filtered_map_files/{exec_param}/', filtered_map_file)
         
         fasta_folder_file = fasta_chunk['key_fasta'].split("/") 
-        fasta = aux.copy_to_runtime(storage, self.args.fasta_bucket, fasta_folder_file[0]+"/", fasta_folder_file[1], 
+        fasta = copy_to_runtime(storage, self.args.fasta_bucket, fasta_folder_file[0]+"/", fasta_folder_file[1], 
                                 {'Range': f"bytes={fasta_chunk['chunk']['offset_base']}-{fasta_chunk['chunk']['last_byte+']}"}, fasta_chunk) # Download fasta chunk
         
         with zipfile.ZipFile(filtered_map_file) as zf:
@@ -134,11 +136,11 @@ class AlignmentMapper:
         Download fastq chunks depending on source
         """   
         if self.args.seq_type == "paired-end":
-            fastq1 = fq_func.fastq_to_mapfun(fastq_chunk[0], fastq_chunk[1])
+            fastq1 = fastq_to_mapfun(fastq_chunk[0], fastq_chunk[1])
             base_name = os.path.splitext(fastq1)[0] #+'.pe'
             fastq2 = "yes"
         else:   # single-end sequencing
-            fastq1 = fq_func.fastq_to_mapfun(fastq_chunk[0], fastq_chunk[1])
+            fastq1 = fastq_to_mapfun(fastq_chunk[0], fastq_chunk[1])
             fastq2 = "no"
             base_name = os.path.splitext(fastq1)[0] #+'.se'
         return fastq1, fastq2, base_name
