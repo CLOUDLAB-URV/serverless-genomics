@@ -39,7 +39,8 @@ class AlignmentMapper:
         ###################################################################
         #### PROCESSING FASTQ CHUNKS
         ###################################################################
-       
+        
+        # Download fastq chunk depending on source
         fastq1, fastq2, base_name = self.download_fastq(fastq_chunk)
         
         ###################################################################
