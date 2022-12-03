@@ -52,7 +52,7 @@ class AlignmentMapper:
     
         gem_ref_nosuffix = os.path.splitext(fasta)[0]
         gem_ref = gem_ref_nosuffix + '.gem'
-        cpus=multiprocessing.cpu_count()
+        cpus = multiprocessing.cpu_count()
         sp.run(['gem-indexer', '--input', fasta, '--threads', str(cpus), '-o', gem_ref_nosuffix], capture_output=True)
 
         ###################################################################

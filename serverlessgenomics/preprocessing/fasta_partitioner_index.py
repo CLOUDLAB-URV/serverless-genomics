@@ -12,11 +12,9 @@ class FastaPartitionerIndex:
     def generate_chunks(self, storage, id, key, chunk_size, obj_size, partitions):
         min_range = id * chunk_size
         max_range = int(obj_size) if id == partitions - 1 else (id + 1) * chunk_size
-        data = storage.get_object(bucket=self.bucket, key=key,
-                                       extra_get_args={'Range': f'bytes={min_range}-{max_range - 1}'}).decode('utf-8')
+        data = storage.get_object(bucket=self.bucket, key=key, extra_get_args={'Range': f'bytes={min_range}-{max_range - 1}'}).decode('utf-8')
         content = []
-        ini_heads = list(
-            re.finditer(r"\n>", data))  # If it were '>' it would also find the ones inside the head information
+        ini_heads = list(re.finditer(r"\n>", data))  # If it were '>' it would also find the ones inside the head information
         heads = list(re.finditer(r">.+\n", data))
 
         if ini_heads or data[0] == '>':  # If the list is not empty or there is > in the first byte
@@ -49,8 +47,7 @@ class FastaPartitionerIndex:
                 last_seq_start = ini_heads[-1].start() + min_range + 1  # (... + 1): ignore '\n'
                 text = data[last_seq_start - min_range::]
                 # [<->|<_>]name_id_split offset_head
-                content.append(
-                    f"{'<-' if ' ' in text else '<_'}{text.split(' ')[0]} {str(last_seq_start)}")  # if '<->' there is all id
+                content.append(f"{'<-' if ' ' in text else '<_'}{text.split(' ')[0]} {str(last_seq_start)}")  # if '<->' there is all id
         return content
     
     def reduce_generate_chunks(self, results):
@@ -83,84 +80,77 @@ class FastaPartitionerIndex:
         sequence = sequence.replace('>> ', f'{name_id} ')  # '>>' -> name_id
         return sequence
 
-
-class FastaPartitionerCaller:
-    def __init__(self, bucket: str):
-        self.bucket = bucket
-        self.storage = lithops.Storage()
-
-    def __call__(self, my_key: str, n_workers: int, fasta_folder: str):
-        # Execution   
-        fexec = lithops.FunctionExecutor()
-
-        fasta_length = self.storage.head_object(self.bucket, my_key)['content-length']
-        chunk_size = int(int(fasta_length) / n_workers)
-        map_iterdata = [{'key': my_key} for _ in range(n_workers)]
-        funct = FastaPartitionerIndex(self.bucket)
-        extra_args = {'chunk_size': chunk_size, 'obj_size': fasta_length, 'partitions': n_workers}
-
-        fexec.map_reduce(map_function=funct.generate_chunks, map_iterdata=map_iterdata, extra_args=extra_args, reduce_function=funct.reduce_generate_chunks)        
-        index = fexec.get_result()        
-        fexec.clean()
-
-        self.__generate_index_file(index, fasta_folder, f'{pathlib.Path(my_key).stem}.fai') 
- 
-    def __generate_index_file(self, data, fasta_folder, file_name):
+    def send_index_file_to_storage(self, data, fasta_folder, file_name):
+        storage = lithops.Storage()
         data_string = ''
         for list_seq in data:
             data_string += "\n".join(list_seq) if not data_string else "\n" + "\n".join(list_seq)
 
-        self.storage.put_object(self.bucket, f'{fasta_folder}{file_name}', str(data_string))
+        storage.put_object(self.bucket, f'{fasta_folder}{file_name}', str(data_string))
 
 
-class FunctionsFastaIndex:
-    def __init__(self, path_index_file, path_fasta_file):
-        self.path_index_file = path_index_file
-        self.path_fasta_file = path_fasta_file
-        self.storage = lithops.Storage()  
+def fasta_partitioner_caller(bucket: str, my_key: str, n_workers: int, fasta_folder: str):
+    # Execution   
+    fexec = lithops.FunctionExecutor()
+    storage = lithops.Storage()
 
+    fasta_length = storage.head_object(bucket, my_key)['content-length']
+    chunk_size = int(int(fasta_length) / n_workers)
+    funct = FastaPartitionerIndex(bucket)
+
+    map_iterdata = [{'key': my_key} for _ in range(n_workers)]
+    extra_args = {'chunk_size': chunk_size, 'obj_size': fasta_length, 'partitions': n_workers}
+
+    fexec.map_reduce(map_function=funct.generate_chunks, map_iterdata=map_iterdata, extra_args=extra_args, reduce_function=funct.reduce_generate_chunks)        
+    index = fexec.get_result()        
+    fexec.clean()
+
+    funct.send_index_file_to_storage(index, fasta_folder, f'{pathlib.Path(my_key).stem}.fai') 
     
-    def get_chunks(self, args: PipelineParameters):
-        fasta_chunks = []
-        total_size = int(self.storage.head_object(args.bucket, self.path_fasta_file)['content-length'])
-        fa_chunk_size = int(total_size / int(args.fasta_workers))
-        data_index = self.storage.get_object(args.bucket, self.path_index_file).decode('utf-8').split('\n')
-        size_data = len(data_index)
-        
-        i = j = 0
-        min = fa_chunk_size * j
-        max = fa_chunk_size * (j + 1)
-        while max <= total_size:
-            # Find first full/half sequence of the chunk
-            if int(data_index[i].split(' ')[1]) <= min < int(data_index[i].split(' ')[2]):   # In the head
+
+def get_fasta_chunks(path_index_file: str, path_fasta_file: str, args: PipelineParameters):
+    storage = lithops.Storage() 
+
+    fasta_chunks = []
+    total_size = int(storage.head_object(args.bucket, path_fasta_file)['content-length'])
+    fa_chunk_size = int(total_size / int(args.fasta_workers))
+    data_index = storage.get_object(args.bucket, path_index_file).decode('utf-8').split('\n')
+    size_data = len(data_index)
+    
+    i = j = 0
+    min = fa_chunk_size * j
+    max = fa_chunk_size * (j + 1)
+    while max <= total_size:
+        # Find first full/half sequence of the chunk
+        if int(data_index[i].split(' ')[1]) <= min < int(data_index[i].split(' ')[2]):   # In the head
+            fa_chunk = {'offset_head': int(data_index[i].split(' ')[1]), 'offset_base': int(data_index[i].split(' ')[2])}
+        elif i == size_data - 1 or min < int(data_index[i + 1].split(' ')[1]):  # In the base
+            fa_chunk = {'offset_head': int(data_index[i].split(' ')[1]), 'offset_base': min}
+        elif i < size_data:
+            i += 1
+            while i + 1 < size_data and min > int(data_index[i + 1].split(' ')[1]):
+                i += 1
+            if min < int(data_index[i].split(' ')[2]):
                 fa_chunk = {'offset_head': int(data_index[i].split(' ')[1]), 'offset_base': int(data_index[i].split(' ')[2])}
-            elif i == size_data - 1 or min < int(data_index[i + 1].split(' ')[1]):  # In the base
+            else:
                 fa_chunk = {'offset_head': int(data_index[i].split(' ')[1]), 'offset_base': min}
+        
+        # Find last full/half sequence of the chunk
+        if i == size_data - 1 or max < int(data_index[i + 1].split(' ')[1]):
+            fa_chunk['last_byte+'] = max - 1 if fa_chunk_size * (j + 2) <= total_size else total_size - 1
+        else:
+            if max < int(data_index[i + 1].split(' ')[2]):  # Split in the middle of head
+                fa_chunk['last_byte+'] = int(data_index[i + 1].split(' ')[1]) - 1
+                i += 1
             elif i < size_data:
                 i += 1
-                while i + 1 < size_data and min > int(data_index[i + 1].split(' ')[1]):
+                while i + 1 < size_data and max > int(data_index[i + 1].split(' ')[1]):
                     i += 1
-                if min < int(data_index[i].split(' ')[2]):
-                    fa_chunk = {'offset_head': int(data_index[i].split(' ')[1]), 'offset_base': int(data_index[i].split(' ')[2])}
-                else:
-                    fa_chunk = {'offset_head': int(data_index[i].split(' ')[1]), 'offset_base': min}
-            
-            # Find last full/half sequence of the chunk
-            if i == size_data - 1 or max < int(data_index[i + 1].split(' ')[1]):
-                fa_chunk['last_byte+'] = max - 1 if fa_chunk_size * (j + 2) <= total_size else total_size - 1
-            else:
-                if max < int(data_index[i + 1].split(' ')[2]):  # Split in the middle of head
-                    fa_chunk['last_byte+'] = int(data_index[i + 1].split(' ')[1]) - 1
-                    i += 1
-                elif i < size_data:
-                    i += 1
-                    while i + 1 < size_data and max > int(data_index[i + 1].split(' ')[1]):
-                        i += 1
-                    fa_chunk['last_byte+'] = max - 1
-            fasta_chunks.append(fa_chunk)
-            j += 1
-            min = fa_chunk_size * j
-            max = fa_chunk_size * (j + 1)
-        return fasta_chunks
+                fa_chunk['last_byte+'] = max - 1
+        fasta_chunks.append(fa_chunk)
+        j += 1
+        min = fa_chunk_size * j
+        max = fa_chunk_size * (j + 1)
+    return fasta_chunks
 
 

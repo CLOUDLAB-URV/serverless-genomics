@@ -1,7 +1,7 @@
 import time
 import sys
 from random import randint
-from .preprocessing import prepare_fasta, prepare_fastq, GenerateAlignmentIterdata
+from .preprocessing import prepare_fasta, prepare_fastq, generate_alignment_iterdata
 from .parameters import PipelineParameters
 import pathlib
 import logging
@@ -43,21 +43,21 @@ class VariantCallingPipeline:
         else:
             num_spots = 0
 
-        fastq_list = prepare_fastq(self.parameters.fastq_read_n, self.parameters.fq_seqname, num_spots)
+        fastq_list = prepare_fastq(int(self.parameters.fastq_read_n), self.parameters.fq_seqname, int(num_spots))
 
         ###################################################################
         #### GENERATE LIST OF FASTA CHUNKS (if not present)
         ###################################################################
 
+        # Generate the index file from the fasta file source if it does not exist and return the path in the storage to the fasta file
         fasta_index = prepare_fasta(self.parameters)
 
         ###################################################################
         #### GENERATE ITERDATA AND PREPROCESSING SUMMARY
         ###################################################################
 
-        generate_aligment = GenerateAlignmentIterdata(self.parameters, fastq_list, fasta_index,
-                                                      self.parameters.fasta_folder + self.parameters.fasta_file)
-        return generate_aligment()
+        # Creates the lithops iterdata from the fasta and fastq chunk lists
+        return generate_alignment_iterdata(self.parameters, fastq_list, fasta_index, self.parameters.fasta_folder + self.parameters.fasta_file)
 
     # TODO implement alignment stage
     def map_alignment(self):
