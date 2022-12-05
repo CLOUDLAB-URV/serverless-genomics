@@ -3,9 +3,9 @@ from lithops import Storage
 import lithops
 import subprocess as sp
 from .alignment_mapper import AlignmentMapper
-from .parameters import PipelineParameters
+from ..parameters import PipelineParameters
 import os
-from . import aux_functions as af
+from .. import aux_functions as af
 
 map1_cachefile = 'lithops_map1_checkpoint'
 correction_cachefile = 'lithops_correction_checkpoint'

@@ -7,8 +7,8 @@ import pathlib
 import logging
 
 # map/reduce functions and executor
-from . import map_reduce_caller
-from .alignment_mapper import AlignmentMapper
+from .mapping import map_reduce_caller
+from .mapping.alignment_mapper import AlignmentMapper
 from . import metadata as sra_meta
 
 from .parameters import validate_parameters, PipelineParameters
@@ -60,8 +60,15 @@ class VariantCallingPipeline:
         return generate_aligment()
 
     # TODO implement alignment stage
-    def map_alignment(self):
-        ...
+    def map_alignment(self, iterdata, num_chunks):
+        ###################################################################
+        #### MAP-REDUCE
+        ###################################################################
+        mapfunc = AlignmentMapper(pathlib.Path(self.parameters.fasta_file).stem, self.parameters)
+        map_time = map_reduce_caller.map_reduce(self.parameters, iterdata, mapfunc, num_chunks)
+        return map_time
+        
+        
 
     # TODO implement reduce stage
     def reduce(self):
@@ -73,16 +80,6 @@ class VariantCallingPipeline:
         """
         iterdata, num_chunks = self.preprocess()
         
-
         if not self.parameters.pre_processing_only:
-            ###################################################################
-            #### MAP-REDUCE
-            ###################################################################
-            mapfunc = AlignmentMapper(pathlib.Path(self.parameters.fasta_file).stem, self.parameters)
-            map_time = map_reduce_caller.map_reduce(self.parameters, iterdata, mapfunc, num_chunks)
-
-            ###################################################################
-            #### MAP-REDUCE SUMMARY
-            ###################################################################
-            print("MAP-REDUCE SUMMARY")
-            print("map phase: execution_time_total_varcall: " + str(map_time) + "s")
+            map_time = self.map_alignment(iterdata, num_chunks)
+            print("map-reduce phase execution time: " + str(map_time) + "s")

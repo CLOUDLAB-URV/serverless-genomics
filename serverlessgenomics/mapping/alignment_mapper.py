@@ -5,10 +5,10 @@ import subprocess as sp
 from typing import Tuple
 import pandas as pd
 from numpy import int64
-from .preprocessing import fastq_to_mapfun
-from . import aux_functions as aux
-from .utils import copy_to_runtime
-from .parameters import PipelineParameters
+from ..preprocessing import fastq_to_mapfun
+from .. import aux_functions as aux
+from ..utils import copy_to_runtime
+from ..parameters import PipelineParameters
 from lithops import Storage
 import zipfile
 
