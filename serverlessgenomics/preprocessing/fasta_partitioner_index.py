@@ -32,7 +32,7 @@ class FastaPartitionerIndex:
                         if match_text and len(match_text) > 1:
                             text = match_text[0].group().split(' ')[0].replace('\n', '')
                             offset = match_text[1].start() + min_range
-                            # >> offset_head offset_bases_split first_line_before_space_or_\n
+                            # >> offset_head offset_bases_split ^first_line_before_space_or_\n^
                             content.append(f">> <Y> {str(offset)} ^{text}^")  # Split sequences
                         else:  # When the first header found is false, when in a split stream there is a split header that has a '>' inside (ex: >tr|...o-alpha-(1->5)-L-e...\n)
                             first_sequence = True
@@ -65,8 +65,7 @@ class FastaPartitionerIndex:
                                 if '<->' in seq_prev:  # If the split was after a space, then there is all id
                                     name_id = param_seq_prev[0].replace('<->', '')
                                 else:
-                                    name_id = param_seq_prev[0].replace('<_>', '') + param[3].replace('^', '')
-                                                          
+                                    name_id = param_seq_prev[0].replace('<_>', '') + param[3].replace('^', '')                       
                                 list_seq[0] = self.__rename_seq(list_seq[0], param, name_id, param_seq_prev[1], param[2])
                             else:
                                 list_seq[0] = seq_prev
@@ -89,15 +88,14 @@ class FastaPartitionerIndex:
         storage.put_object(self.bucket, f'{fasta_folder}{file_name}', str(data_string))
 
 
-def fasta_partitioner_caller(bucket: str, my_key: str, n_workers: int, fasta_folder: str):
-    # Execution   
+def fasta_partitioner_caller(bucket: str, my_key: str, n_workers: int, fasta_folder: str): 
     fexec = lithops.FunctionExecutor()
     storage = lithops.Storage()
 
     fasta_length = storage.head_object(bucket, my_key)['content-length']
     chunk_size = int(int(fasta_length) / n_workers)
     funct = FastaPartitionerIndex(bucket)
-
+  
     map_iterdata = [{'key': my_key} for _ in range(n_workers)]
     extra_args = {'chunk_size': chunk_size, 'obj_size': fasta_length, 'partitions': n_workers}
 
@@ -134,7 +132,8 @@ def get_fasta_chunks(path_index_file: str, path_fasta_file: str, args: PipelineP
                 fa_chunk = {'offset_head': int(data_index[i].split(' ')[1]), 'offset_base': int(data_index[i].split(' ')[2])}
             else:
                 fa_chunk = {'offset_head': int(data_index[i].split(' ')[1]), 'offset_base': min}
-        
+        else:
+            raise Exception('ERROR: there was a problem getting the first byte of a fasta chunk.')
         # Find last full/half sequence of the chunk
         if i == size_data - 1 or max < int(data_index[i + 1].split(' ')[1]):
             fa_chunk['last_byte+'] = max - 1 if fa_chunk_size * (j + 2) <= total_size else total_size - 1
@@ -147,6 +146,9 @@ def get_fasta_chunks(path_index_file: str, path_fasta_file: str, args: PipelineP
                 while i + 1 < size_data and max > int(data_index[i + 1].split(' ')[1]):
                     i += 1
                 fa_chunk['last_byte+'] = max - 1
+            else:
+                raise Exception('ERROR: there was a problem getting the last byte of a fasta chunk.')
+                
         fasta_chunks.append(fa_chunk)
         j += 1
         min = fa_chunk_size * j
