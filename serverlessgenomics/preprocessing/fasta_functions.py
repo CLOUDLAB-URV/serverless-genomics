@@ -3,7 +3,7 @@ import subprocess as sp
 from serverlessgenomics.parameters import PipelineParameters
 import pathlib
 
-from .fasta_partitioner_index import FastaPartitionerCaller
+from .fasta_partitioner_index import fasta_partitioner_caller
 import re
 
 def prepare_fasta(args: PipelineParameters):
@@ -17,8 +17,8 @@ def prepare_fasta(args: PipelineParameters):
         storage.head_object(args.bucket, fasta_index)
     except:
         print("Index fasta folder empty / not found, then generating index fasta file and storing it")
-        fasta_partitioner = FastaPartitionerCaller(args.bucket)
-        fasta_partitioner(args.fasta_folder + args.fasta_file, int(args.fasta_workers), args.fasta_folder_index)
+        # Generate index file from the fasta source
+        fasta_partitioner_caller(args.bucket, args.fasta_folder + args.fasta_file, int(args.fasta_workers), args.fasta_folder_index)
         try:
             storage.head_object(args.bucket, fasta_index)
         except:
