@@ -7,7 +7,7 @@ import pathlib
 import logging
 
 # map/reduce functions and executor
-from .mapping import map_reduce_caller
+from .mapping import map_caller
 from .mapping.alignment_mapper import AlignmentMapper
 from . import metadata as sra_meta
 
@@ -59,13 +59,13 @@ class VariantCallingPipeline:
                                                       self.parameters.fasta_folder + self.parameters.fasta_file)
         return generate_aligment()
 
-    # TODO implement alignment stage
+
     def map_alignment(self, iterdata, num_chunks):
         ###################################################################
         #### MAP-REDUCE
         ###################################################################
         mapfunc = AlignmentMapper(pathlib.Path(self.parameters.fasta_file).stem, self.parameters)
-        map_time = map_reduce_caller.map_reduce(self.parameters, iterdata, mapfunc, num_chunks)
+        map_time = map_caller.map(self.parameters, iterdata, mapfunc, num_chunks)
         return map_time
         
         
