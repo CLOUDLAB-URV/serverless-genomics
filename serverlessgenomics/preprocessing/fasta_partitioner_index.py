@@ -8,7 +8,6 @@ class FastaPartitionerIndex:
     def __init__(self, bucket):
         self.bucket = bucket
 
-    # Generate metadata from fasta file
     def generate_chunks(self, storage, id, key, chunk_size, obj_size, partitions):
         min_range = id * chunk_size
         max_range = int(obj_size) if id == partitions - 1 else (id + 1) * chunk_size
