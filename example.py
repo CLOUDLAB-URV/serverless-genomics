@@ -10,4 +10,5 @@ if __name__ == '__main__':
         fastq_chunks=16,
         log_level=logging.DEBUG,
     )
+    # pipeline.clean_all()
     pipeline.run_pipeline()

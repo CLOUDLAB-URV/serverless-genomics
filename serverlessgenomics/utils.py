@@ -13,7 +13,7 @@ from dataclasses import asdict
 import lithops
 from lithops.storage.utils import StorageNoSuchKeyError
 
-from .preprocessing.fasta_functions import create_fasta_chunk_for_runtime
+# from .preprocessing.preprocess_fasta import create_fasta_chunk_for_runtime
 
 if TYPE_CHECKING:
     from lithops import Storage
@@ -168,7 +168,8 @@ def copy_to_runtime(storage: Storage, bucket: str, folder: str, file_name: str, 
     temp_file = "/tmp/" + file_name
     with open(temp_file, 'wb') as file:
         if fasta is not None:
-            file.write(create_fasta_chunk_for_runtime(storage, bucket, fasta, byte_range, folder, file_name))
+            # file.write(create_fasta_chunk_for_runtime(storage, bucket, fasta, byte_range, folder, file_name))
+            raise Exception()
         else:
             shutil.copyfileobj(
                 storage.get_object(bucket=bucket, key=folder + file_name, stream=True, extra_get_args=byte_range), file)

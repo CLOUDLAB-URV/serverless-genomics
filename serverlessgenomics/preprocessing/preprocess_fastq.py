@@ -80,7 +80,7 @@ def generate_idx_from_gzip(pipeline_params: PipelineRun, gzip_file_path: S3Path,
 
         # Store index binary file
         index_key, tab_key = pipeline_params.fastqgz_idx_keys
-        s3.upload_file(Filename=tmp_index_file_name, Bucket=pipeline_params.bucket, Key=index_key)
+        s3.upload_file(Filename=tmp_index_file_name, Bucket=pipeline_params.storage_bucket, Key=index_key)
 
         # Get the total number of lines
         total_lines: int = int(RE_NUMS.findall(RE_NLINES.findall(output).pop()).pop())
@@ -107,7 +107,7 @@ def generate_idx_from_gzip(pipeline_params: PipelineRun, gzip_file_path: S3Path,
         df.to_parquet(out_stream, engine='pyarrow')
         out_stream.seek(0)
 
-        s3.put_object(Bucket=pipeline_params.bucket, Key=tab_key, Body=out_stream,
+        s3.put_object(Bucket=pipeline_params.storage_bucket, Key=tab_key, Body=out_stream,
                       Metadata={'total_lines': str(total_lines)})
         return total_lines
     finally:
@@ -116,7 +116,7 @@ def generate_idx_from_gzip(pipeline_params: PipelineRun, gzip_file_path: S3Path,
 
 def get_ranges_from_line_pairs(pipeline_params: PipelineRun, lithops: Lithops, pairs: List[Tuple[int, int]]):
     _, tab_key = pipeline_params.fastqgz_idx_keys
-    meta_obj_body = lithops.storage.get_object(bucket=pipeline_params.bucket, key=tab_key)
+    meta_obj_body = lithops.storage.get_object(bucket=pipeline_params.storage_bucket, key=tab_key)
     meta_buff = io.BytesIO(meta_obj_body)
     meta_buff.seek(0)
     df = pd.read_parquet(meta_buff)
@@ -155,7 +155,7 @@ def get_ranges_from_line_pairs(pipeline_params: PipelineRun, lithops: Lithops, p
     return byte_ranges
 
 
-def prepare_fastq_from_s3(pipeline_params: PipelineRun, lithops: Lithops) -> int:
+def generate_fastqgz_index_from_s3(pipeline_params: PipelineRun, lithops: Lithops) -> int:
     """
     Generate gzip index file for FASTQ in storage if necessary, returns number of lines of FASTQ file
     """
@@ -175,18 +175,21 @@ def prepare_fastq_from_s3(pipeline_params: PipelineRun, lithops: Lithops) -> int
         logger.info('Generating gzip index file for FASTQ %s', pipeline_params.fastq_path.stem)
         total_lines = lithops.invoker.call('generate_fasta_idx', pipeline_params,
                                            generate_idx_from_gzip, (pipeline_params, pipeline_params.fastq_path))
-        logger.info('Read %d lines from %s', total_lines, pipeline_params.fastq_path.stem)
     else:
         # Get total lines from header metadata
+        logger.debug('Fastqz index for %s found', pipeline_params.fastq_path.stem)
         total_lines = int(fastq_tab_head['x-amz-meta-total_lines'])
-        logger.info('Read %d lines from %s', total_lines, pipeline_params.fastq_path.stem)
+    logger.info('Read %d sequences from FASTQ %s', total_lines / 4, pipeline_params.fastq_path.stem)
 
     return total_lines
 
 
 def prepare_fastq_chunks(pipeline_params: PipelineRun, lithops: Lithops):
+    """
+    Calculate fastq byte ranges for chunks of a pipeline run, generate gzip index if needed
+    """
     if pipeline_params.fastq_path is not None:
-        num_lines = prepare_fastq_from_s3(pipeline_params, lithops)
+        num_lines = generate_fastqgz_index_from_s3(pipeline_params, lithops)
     elif pipeline_params.fastq_sra is not None:
         # TODO implement get fastq file from sra archive
         raise NotImplementedError()
@@ -208,25 +211,12 @@ def prepare_fastq_chunks(pipeline_params: PipelineRun, lithops: Lithops):
         line_pairs[-1] = (l0, num_lines)
 
     # Get byte ranges from line pairs using GZip index
+    # TODO maybe call this function using lithops? currenty it needs to download the tab file to local process, compare if it is faster invoking remote lambda
     byte_ranges = get_ranges_from_line_pairs(pipeline_params, lithops, line_pairs)
     return byte_ranges
 
 
-# def prepare_fastq(pipeline_params: PipelineParameters):
-#     """
-#     Prepare fastq chunks for processing. The fastq files can be obtained from SRA.
-#     """
-#     list_fastq = []
-#     ini = end = counter = 0
-#     mod = num_subprocessots % chunk_size
-#
-#     while end < num_subprocessots:
-#         ini = end
-#         end = num_subprocessots if end == num_subprocessots - (chunk_size + mod) else end + chunk_size
-#         list_fastq.append((seq_name, {'number': (counter + 1), 'start_line': str(ini), 'end_line': str(end)}))
-#         counter += 1
-#     return list_fastq
-
+# TODO remake function, not optimal...
 def fastq_to_mapfun(fastq_file_key: str, fastq_chunk_data: str) -> str:
     """
     Function executed within the map function to retrieve the relevant fastq chunk from object storage

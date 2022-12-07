@@ -48,9 +48,9 @@ def delete_files(storage: Storage, args:PipelineRun, cloud_prefixes: List[str] =
     """
     #Delete cloud files
     for prefix in cloud_prefixes:
-        keys = storage.list_keys(args.bucket, prefix)
+        keys = storage.list_keys(args.storage_bucket, prefix)
         for key in keys:
-            storage.delete_object(args.bucket, key)
+            storage.delete_object(args.storage_bucket, key)
     
     #Delete local files        
     for file in local_files:

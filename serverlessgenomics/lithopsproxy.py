@@ -9,49 +9,32 @@ if TYPE_CHECKING:
 
 
 class LithopsProxy:
-    def __init__(self,
-                 mode: Optional[str] = None,
-                 config: Optional[Dict[str, Any]] = None,
-                 backend: Optional[str] = None,
-                 storage: Optional[str] = None,
-                 runtime: Optional[str] = None,
-                 runtime_memory: Optional[int] = None,
-                 monitoring: Optional[str] = None,
-                 max_workers: Optional[int] = None,
-                 worker_processes: Optional[int] = None,
-                 remote_invoker: Optional[bool] = None,
-                 log_level: Optional[str] = False):
-        self.__fexec = lithops.FunctionExecutor(mode, config, backend, storage, runtime, runtime_memory, monitoring,
-                                                max_workers, worker_processes, remote_invoker, log_level)
+    def __init__(self, **kwargs):
+        self.__fexec = lithops.FunctionExecutor(**kwargs)
         self.__futures = {}
 
-    def call_async(self,
-                   stage: str,
-                   pipeline_params: PipelineRun,
-                   func: Callable,
-                   data: Union[List[Any], Tuple[Any, ...], Dict[str, Any]],
-                   extra_env: Optional[Dict] = None,
-                   runtime_memory: Optional[int] = None,
-                   timeout: Optional[int] = None,
-                   include_modules: Optional[List] = [],
-                   exclude_modules: Optional[List] = []) -> ResponseFuture:
-        fut = self.__fexec.call_async(func, data, extra_env, runtime_memory,
-                                      timeout, include_modules, exclude_modules)
+    def call_async(self, stage: str, pipeline_params: PipelineRun, *args, **kwargs) -> ResponseFuture:
+        fut = self.__fexec.call_async(*args, **kwargs)
         self.__futures[stage] = fut
         return fut
 
-    def call(self,
-             stage: str,
-             pipeline_params: PipelineRun,
-             func: Callable,
-             data: Union[List[Any], Tuple[Any, ...], Dict[str, Any]],
-             extra_env: Optional[Dict] = None,
-             runtime_memory: Optional[int] = None,
-             timeout: Optional[int] = None,
-             include_modules: Optional[List] = [],
-             exclude_modules: Optional[List] = []):
-        fut = self.__fexec.call_async(func, data, extra_env, runtime_memory,
-                                      timeout, include_modules, exclude_modules)
+    def call(self, stage: str, pipeline_params: PipelineRun, *args, **kwargs):
+        fut = self.__fexec.call_async(*args, **kwargs)
+        self.__futures[stage] = fut
+        result = self.__fexec.get_result(fs=fut)
+        return result
+
+    def map_async(self, stage, pipeline_params, *args, **kwargs):
+        raise NotImplementedError()
+
+    def map(self, stage, pipeline_params, *args, **kwargs):
+        raise NotImplementedError()
+
+    def map_reduce_async(self, stage, pipeline_params, *args, **kwargs):
+        raise NotImplementedError()
+
+    def map_reduce(self, stage, pipeline_params, *args, **kwargs):
+        fut = self.__fexec.map_reduce(*args, **kwargs)
         self.__futures[stage] = fut
         result = self.__fexec.get_result(fs=fut)
         return result

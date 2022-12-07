@@ -88,11 +88,11 @@ class AlignmentMapper:
             zf.write(filtered_map_file)
 
         # Copy intermediate files to storage for index correction             
-        map_index_file = aux.copy_to_s3(storage, self.args.bucket, map_index_file, True,
+        map_index_file = aux.copy_to_s3(storage, self.args.storage_bucket, map_index_file, True,
                                         f'map_index_files/{exec_param}/')
         map_index_file = map_index_file.replace(f"map_index_files/{exec_param}/", "")
 
-        filtered_map_file = aux.copy_to_s3(storage, self.args.bucket, zipname, True,
+        filtered_map_file = aux.copy_to_s3(storage, self.args.storage_bucket, zipname, True,
                                            f'filtered_map_files/{exec_param}/')
         filtered_map_file = filtered_map_file.replace(f"filtered_map_files/{exec_param}/", "")
 
@@ -120,9 +120,9 @@ class AlignmentMapper:
         ###################################################################
         #### RECOVER DATA FROM PREVIOUS MAP
         ###################################################################
-        corrected_map_index_file = copy_to_runtime(storage, self.args.bucket, f'corrected_index/{exec_param}/',
+        corrected_map_index_file = copy_to_runtime(storage, self.args.storage_bucket, f'corrected_index/{exec_param}/',
                                                    corrected_map_index_file)
-        filtered_map_file = copy_to_runtime(storage, self.args.bucket, f'filtered_map_files/{exec_param}/',
+        filtered_map_file = copy_to_runtime(storage, self.args.storage_bucket, f'filtered_map_files/{exec_param}/',
                                             filtered_map_file)
 
         fasta_folder_file = fasta_chunk['key_fasta'].split("/")
@@ -239,17 +239,17 @@ class AlignmentMapper:
             content = content + str(range_index[i + 1]) + ":" + str(df3.iloc[i, 0]) + "\n"
 
         # Upload .txt file to storage
-        storage.put_object(bucket=self.args.bucket, key=intermediate_key + ".txt", body=content)
+        storage.put_object(bucket=self.args.storage_bucket, key=intermediate_key + ".txt", body=content)
 
         # Write the mpileup file to the tmp directory
         if self.args.file_format == "csv":
             df.to_csv(mpileup_file + ".csv", index=False, header=False)
             with open(mpileup_file + ".csv", 'rb') as f:
-                storage.put_object(bucket=self.args.bucket, key=intermediate_key + ".csv", body=f)
+                storage.put_object(bucket=self.args.storage_bucket, key=intermediate_key + ".csv", body=f)
 
         elif self.args.file_format == "parquet":
             df.to_parquet(mpileup_file + ".parquet")
             with open(mpileup_file + ".parquet", 'rb') as f:
-                storage.put_object(bucket=self.args.bucket, key=intermediate_key + ".parquet", body=f)
+                storage.put_object(bucket=self.args.storage_bucket, key=intermediate_key + ".parquet", body=f)
 
         return [intermediate_key + "." + self.args.file_format, intermediate_key + ".txt"]

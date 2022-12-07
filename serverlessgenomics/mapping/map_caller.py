@@ -105,7 +105,7 @@ def map(args: PipelineRun, iterdata: list, map_func: AlignmentMapper, num_chunks
             # Generate the iterdata for index correction
             index_iterdata = []
             for i in range(num_chunks):
-                index_iterdata.append({'setname': args.fq_seqname + '_fq' + str(i + 1), 'bucket': str(args.bucket),
+                index_iterdata.append({'setname': args.fq_seqname + '_fq' + str(i + 1), 'bucket': str(args.storage_bucket),
                                        'exec_param': args.execution_name})
 
             # Execute index correction
@@ -151,7 +151,7 @@ def map(args: PipelineRun, iterdata: list, map_func: AlignmentMapper, num_chunks
 
     else:  # Skip map and get keys from previous run
         print("skipping map phase and retrieving existing keys")
-        storage.list_keys(args.bucket, prefix="csv/")
+        storage.list_keys(args.storage_bucket, prefix="csv/")
 
     # End of map
     end = time.time()

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from .fasta_partitioner_index import get_fasta_chunks
+from .preprocess_fasta import get_fasta_byte_ranges
 import re
 
 if TYPE_CHECKING:
@@ -16,7 +16,7 @@ def generate_alignment_iterdata(args: PipelineRun, list_fastq: list, fasta_index
 
     print("\nStarting phase: iterdata generation")
     # Get the fasta chunks
-    fasta_chunks = get_fasta_chunks(fasta_index, fasta_file_path, args)
+    fasta_chunks = get_fasta_byte_ranges(fasta_index, fasta_file_path, args)
 
     # Generate iterdata
     num_chunks = 0
