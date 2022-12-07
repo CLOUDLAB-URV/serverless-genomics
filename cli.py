@@ -1,14 +1,3 @@
-"""
-
-REMAINING THINGS TO DO:
--Implement new fasta partitioner
--Add s3 fastq location
--Improve/Remake log system
--Add the dockerfile folder
--More refactoring
-
-"""
-
 import argparse
 from serverlessgenomics.pipeline import VariantCallingPipeline
 

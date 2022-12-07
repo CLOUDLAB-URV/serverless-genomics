@@ -3,7 +3,7 @@ from lithops import Storage
 import lithops
 import subprocess as sp
 from .alignment_mapper import AlignmentMapper
-from ..parameters import PipelineParameters
+from ..parameters import PipelineRun
 import os
 from .. import aux_functions as af
 
@@ -40,12 +40,12 @@ def index_correction_map(setname: str, bucket: str, exec_param: str, storage: St
     storage.upload_file('/tmp/' + setname + '.txt', bucket, f'corrected_index/{exec_param}/{setname}.txt')
 
 
-def map(args: PipelineParameters, iterdata: list, map_func: AlignmentMapper, num_chunks: int) -> float:
+def map(args: PipelineRun, iterdata: list, map_func: AlignmentMapper, num_chunks: int) -> float:
     """
     Execute the map phase
 
     Args:
-        args (PipelineParameters): pipeline arguments
+        args (PipelineRun): pipeline arguments
         iterdata (list): iterdata generated in the preprocessing stage
         map_func (AlignmentMapper): class containing the map functions
         num_chunks (int): number of corrections needed

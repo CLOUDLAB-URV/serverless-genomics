@@ -1,8 +1,13 @@
+from __future__ import annotations
 import os
+from typing import TYPE_CHECKING
 import pathlib
 import re
 import lithops
-from serverlessgenomics.parameters import PipelineParameters
+
+if TYPE_CHECKING:
+    from serverlessgenomics.parameters import PipelineRun
+
 
 class FastaPartitionerIndex:
     def __init__(self, bucket):
@@ -11,9 +16,11 @@ class FastaPartitionerIndex:
     def generate_chunks(self, storage, id, key, chunk_size, obj_size, partitions):
         min_range = id * chunk_size
         max_range = int(obj_size) if id == partitions - 1 else (id + 1) * chunk_size
-        data = storage.get_object(bucket=self.bucket, key=key, extra_get_args={'Range': f'bytes={min_range}-{max_range - 1}'}).decode('utf-8')
+        data = storage.get_object(bucket=self.bucket, key=key,
+                                  extra_get_args={'Range': f'bytes={min_range}-{max_range - 1}'}).decode('utf-8')
         content = []
-        ini_heads = list(re.finditer(r"\n>", data))  # If it were '>' it would also find the ones inside the head information
+        ini_heads = list(
+            re.finditer(r"\n>", data))  # If it were '>' it would also find the ones inside the head information
         heads = list(re.finditer(r">.+\n", data))
 
         if ini_heads or data[0] == '>':  # If the list is not empty or there is > in the first byte
@@ -46,11 +53,12 @@ class FastaPartitionerIndex:
                 last_seq_start = ini_heads[-1].start() + min_range + 1  # (... + 1): ignore '\n'
                 text = data[last_seq_start - min_range::]
                 # [<->|<_>]name_id_split offset_head
-                content.append(f"{'<-' if ' ' in text else '<_'}{text.split(' ')[0]} {str(last_seq_start)}")  # if '<->' there is all id
+                content.append(
+                    f"{'<-' if ' ' in text else '<_'}{text.split(' ')[0]} {str(last_seq_start)}")  # if '<->' there is all id
         return content
-    
+
     def reduce_generate_chunks(self, results):
-        if len(results) > 1:            
+        if len(results) > 1:
             results = list(filter(None, results))
             for i, list_seq in enumerate(results):
                 if i > 0:
@@ -64,14 +72,15 @@ class FastaPartitionerIndex:
                                 if '<->' in seq_prev:  # If the split was after a space, then there is all id
                                     name_id = param_seq_prev[0].replace('<->', '')
                                 else:
-                                    name_id = param_seq_prev[0].replace('<_>', '') + param[3].replace('^', '')                       
-                                list_seq[0] = self.__rename_seq(list_seq[0], param, name_id, param_seq_prev[1], param[2])
+                                    name_id = param_seq_prev[0].replace('<_>', '') + param[3].replace('^', '')
+                                list_seq[0] = self.__rename_seq(list_seq[0], param, name_id, param_seq_prev[1],
+                                                                param[2])
                             else:
                                 list_seq[0] = seq_prev
                             list_prev.pop()  # Remove previous sequence  
         return results
 
-    def __rename_seq(sequence, param, name_id, offset_head, offset_base):    
+    def __rename_seq(sequence, param, name_id, offset_head, offset_base):
         sequence = sequence.replace(f' {param[3]}', '')  # Remove 3rt param
         sequence = sequence.replace(f' {param[2]} ', f' {offset_base} ')  # offset_base -> offset_base
         sequence = sequence.replace(' <Y> ', f' {offset_head} ')  # Y --> offset_head
@@ -87,40 +96,42 @@ class FastaPartitionerIndex:
         storage.put_object(self.bucket, f'{fasta_folder}{file_name}', str(data_string))
 
 
-def fasta_partitioner_caller(bucket: str, my_key: str, n_workers: int, fasta_folder: str): 
+def fasta_partitioner_caller(bucket: str, my_key: str, n_workers: int, fasta_folder: str):
     fexec = lithops.FunctionExecutor()
     storage = lithops.Storage()
 
     fasta_length = storage.head_object(bucket, my_key)['content-length']
     chunk_size = int(int(fasta_length) / n_workers)
     funct = FastaPartitionerIndex(bucket)
-  
+
     map_iterdata = [{'key': my_key} for _ in range(n_workers)]
     extra_args = {'chunk_size': chunk_size, 'obj_size': fasta_length, 'partitions': n_workers}
 
-    fexec.map_reduce(map_function=funct.generate_chunks, map_iterdata=map_iterdata, extra_args=extra_args, reduce_function=funct.reduce_generate_chunks)        
-    index = fexec.get_result()        
+    fexec.map_reduce(map_function=funct.generate_chunks, map_iterdata=map_iterdata, extra_args=extra_args,
+                     reduce_function=funct.reduce_generate_chunks)
+    index = fexec.get_result()
     fexec.clean()
 
-    funct.send_index_file_to_storage(index, fasta_folder, f'{pathlib.Path(my_key).stem}.fai') 
-    
+    funct.send_index_file_to_storage(index, fasta_folder, f'{pathlib.Path(my_key).stem}.fai')
 
-def get_fasta_chunks(path_index_file: str, path_fasta_file: str, args: PipelineParameters):
-    storage = lithops.Storage() 
+
+def get_fasta_chunks(path_index_file: str, path_fasta_file: str, args: PipelineRun):
+    storage = lithops.Storage()
 
     fasta_chunks = []
     total_size = int(storage.head_object(args.bucket, path_fasta_file)['content-length'])
-    fa_chunk_size = int(total_size / int(args.fasta_workers))
+    fa_chunk_size = int(total_size / int(args.fasta_chunks))
     data_index = storage.get_object(args.bucket, path_index_file).decode('utf-8').split('\n')
     size_data = len(data_index)
-    
+
     i = j = 0
     min = fa_chunk_size * j
     max = fa_chunk_size * (j + 1)
     while max <= total_size:
         # Find first full/half sequence of the chunk
-        if int(data_index[i].split(' ')[1]) <= min < int(data_index[i].split(' ')[2]):   # In the head
-            fa_chunk = {'offset_head': int(data_index[i].split(' ')[1]), 'offset_base': int(data_index[i].split(' ')[2])}
+        if int(data_index[i].split(' ')[1]) <= min < int(data_index[i].split(' ')[2]):  # In the head
+            fa_chunk = {'offset_head': int(data_index[i].split(' ')[1]),
+                        'offset_base': int(data_index[i].split(' ')[2])}
         elif i == size_data - 1 or min < int(data_index[i + 1].split(' ')[1]):  # In the base
             fa_chunk = {'offset_head': int(data_index[i].split(' ')[1]), 'offset_base': min}
         elif i < size_data:
@@ -128,7 +139,8 @@ def get_fasta_chunks(path_index_file: str, path_fasta_file: str, args: PipelineP
             while i + 1 < size_data and min > int(data_index[i + 1].split(' ')[1]):
                 i += 1
             if min < int(data_index[i].split(' ')[2]):
-                fa_chunk = {'offset_head': int(data_index[i].split(' ')[1]), 'offset_base': int(data_index[i].split(' ')[2])}
+                fa_chunk = {'offset_head': int(data_index[i].split(' ')[1]),
+                            'offset_base': int(data_index[i].split(' ')[2])}
             else:
                 fa_chunk = {'offset_head': int(data_index[i].split(' ')[1]), 'offset_base': min}
         else:
@@ -147,11 +159,9 @@ def get_fasta_chunks(path_index_file: str, path_fasta_file: str, args: PipelineP
                 fa_chunk['last_byte+'] = max - 1
             else:
                 raise Exception('ERROR: there was a problem getting the last byte of a fasta chunk.')
-                
+
         fasta_chunks.append(fa_chunk)
         j += 1
         min = fa_chunk_size * j
         max = fa_chunk_size * (j + 1)
     return fasta_chunks
-
-

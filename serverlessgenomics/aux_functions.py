@@ -3,7 +3,7 @@ from typing import List
 import pickle
 from lithops.utils import FuturesList
 from lithops import Storage
-from .parameters import PipelineParameters
+from .parameters import PipelineRun
 
 
 def copy_to_s3(storage: Storage, bucket: str, file_name: str, temp_to_s3: bool, folder_name: str = "") -> str:
@@ -20,7 +20,7 @@ def copy_to_s3(storage: Storage, bucket: str, file_name: str, temp_to_s3: bool, 
     return ""
 
 
-def load_cache(filename: str, args:PipelineParameters) -> FuturesList:
+def load_cache(filename: str, args:PipelineRun) -> FuturesList:
     """
     Load a futures local file from previous execution
     """
@@ -32,7 +32,7 @@ def load_cache(filename: str, args:PipelineParameters) -> FuturesList:
     else:
         return 0
     
-def dump_cache(filename: str, futures: FuturesList, args:PipelineParameters):
+def dump_cache(filename: str, futures: FuturesList, args:PipelineRun):
     """
     Store the lithops futures variable in local storage
     """
@@ -42,7 +42,7 @@ def dump_cache(filename: str, futures: FuturesList, args:PipelineParameters):
     pickle.dump(futures, file)
     file.close()
     
-def delete_files(storage: Storage, args:PipelineParameters, cloud_prefixes: List[str] = [], local_files: List[str] = []):
+def delete_files(storage: Storage, args:PipelineRun, cloud_prefixes: List[str] = [], local_files: List[str] = []):
     """
     Delete a list of cloud and local files
     """
