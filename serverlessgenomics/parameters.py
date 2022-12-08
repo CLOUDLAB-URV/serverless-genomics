@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Optional
 import lithops
 import uuid
 
-from .lithopsproxy import LithopsProxy
+from .cachedlithops import CachedLithopsInvoker
 from .utils import S3Path
 
 if TYPE_CHECKING:
@@ -74,7 +74,7 @@ class PipelineRun:
 @dataclass(frozen=True)
 class Lithops:
     storage: lithops.Storage
-    invoker: LithopsProxy
+    invoker: CachedLithopsInvoker
 
 
 def validate_parameters(params) -> PipelineRun:

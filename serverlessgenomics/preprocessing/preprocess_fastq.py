@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, List, Tuple
 import numpy as np
 import pandas as pd
 
-from ..utils import force_delete_path, S3Path, try_head_object
+from ..utils import force_delete_local_path, S3Path, try_head_object
 
 if TYPE_CHECKING:
     from ..parameters import PipelineRun, Lithops
@@ -26,16 +26,6 @@ CHUNK_SIZE = 65536
 RE_WINDOWS = re.compile(r'#\d+: @ \d+ / \d+ L\d+ \( \d+ @\d+ \)')
 RE_NUMS = re.compile(r'\d+')
 RE_NLINES = re.compile(r'Number of lines\s+:\s+\d+')
-
-
-def _get_gztool_path():
-    """
-    Utility function that returns the absolute path for gzip file binary or raises exception if it is not found
-    """
-    proc = subprocess.run(['which', 'gztool'], check=True, capture_output=True, text=True)
-    path = proc.stdout.rstrip('\n')
-    logger.debug('Using gztool located in %s', path)
-    return path
 
 
 # @lithops_callee
@@ -51,7 +41,7 @@ def generate_idx_from_gzip(pipeline_params: PipelineRun, gzip_file_path: S3Path,
     try:
         res = s3.get_object(Bucket=gzip_file_path.bucket, Key=gzip_file_path.key)
         data_stream = res['Body']
-        force_delete_path(tmp_index_file_name)
+        force_delete_local_path(tmp_index_file_name)
         t0 = time.perf_counter()
 
         # Create index and save to tmp file
@@ -111,7 +101,7 @@ def generate_idx_from_gzip(pipeline_params: PipelineRun, gzip_file_path: S3Path,
                       Metadata={'total_lines': str(total_lines)})
         return total_lines
     finally:
-        force_delete_path(tmp_index_file_name)
+        force_delete_local_path(tmp_index_file_name)
 
 
 def get_ranges_from_line_pairs(pipeline_params: PipelineRun, lithops: Lithops, pairs: List[Tuple[int, int]]):
@@ -173,8 +163,7 @@ def generate_fastqgz_index_from_s3(pipeline_params: PipelineRun, lithops: Lithop
     if fastq_idx_head is None or fastq_tab_head is None:
         # Generate gzip index file for compressed fastq input
         logger.info('Generating gzip index file for FASTQ %s', pipeline_params.fastq_path.stem)
-        total_lines = lithops.invoker.call('generate_fasta_idx', pipeline_params,
-                                           generate_idx_from_gzip, (pipeline_params, pipeline_params.fastq_path))
+        total_lines = lithops.invoker.call(generate_idx_from_gzip, (pipeline_params, pipeline_params.fastq_path))
     else:
         # Get total lines from header metadata
         logger.debug('Fastqz index for %s found', pipeline_params.fastq_path.stem)
@@ -213,27 +202,28 @@ def prepare_fastq_chunks(pipeline_params: PipelineRun, lithops: Lithops):
     # Get byte ranges from line pairs using GZip index
     # TODO maybe call this function using lithops? currenty it needs to download the tab file to local process, compare if it is faster invoking remote lambda
     byte_ranges = get_ranges_from_line_pairs(pipeline_params, lithops, line_pairs)
-    return byte_ranges
+    chunks = [{'chunk_id': i, 'line_0': line_0, 'line_1': line_1, 'range_0': range_0, 'range_1': range_1}
+              for i, ((line_0, line_1), (range_0, range_1)) in enumerate(zip(line_pairs, byte_ranges))]
+    return chunks
 
-
-# TODO remake function, not optimal...
-def fastq_to_mapfun(fastq_file_key: str, fastq_chunk_data: str) -> str:
-    """
-    Function executed within the map function to retrieve the relevant fastq chunk from object storage
-    """
-    seq_name = fastq_file_key
-
-    subprocess.call(['chmod', '+x', 'fastq-dump'])
-    subprocess.run(['vdb-config', '-i'])  # To supress a warning that appears the first time vdb-config is used
-
-    # Report cloud identity so it can take data from s3 needed to be executed only once per vm
-    output = str(subprocess.run(['vdb-config', '--report-cloud-identity', 'yes'], capture_output=True).stdout)
-
-    os.chdir(f"/tmp")
-    temp_fastq = f'/tmp/' + seq_name + f'_chunk{fastq_chunk_data["number"]}.fastq'
-    data_output = subprocess.run(['fastq-dump', str(seq_name), '-X', str(int(fastq_chunk_data["start_line"])), '-N',
-                                  str(int(fastq_chunk_data["end_line"])), '-O', f'/tmp'],
-                                 capture_output=True)
-    os.rename(f'/tmp/' + seq_name + '.fastq', temp_fastq)
-
-    return temp_fastq
+# TODO implement get fastq from sra archive
+# def fastq_to_mapfun(fastq_file_key: str, fastq_chunk_data: str) -> str:
+#     """
+#     Function executed within the map function to retrieve the relevant fastq chunk from object storage
+#     """
+#     seq_name = fastq_file_key
+#
+#     subprocess.call(['chmod', '+x', 'fastq-dump'])
+#     subprocess.run(['vdb-config', '-i'])  # To supress a warning that appears the first time vdb-config is used
+#
+#     # Report cloud identity so it can take data from s3 needed to be executed only once per vm
+#     output = str(subprocess.run(['vdb-config', '--report-cloud-identity', 'yes'], capture_output=True).stdout)
+#
+#     os.chdir(f"/tmp")
+#     temp_fastq = f'/tmp/' + seq_name + f'_chunk{fastq_chunk_data["number"]}.fastq'
+#     data_output = subprocess.run(['fastq-dump', str(seq_name), '-X', str(int(fastq_chunk_data["start_line"])), '-N',
+#                                   str(int(fastq_chunk_data["end_line"])), '-O', f'/tmp'],
+#                                  capture_output=True)
+#     os.rename(f'/tmp/' + seq_name + '.fastq', temp_fastq)
+#
+#     return temp_fastq

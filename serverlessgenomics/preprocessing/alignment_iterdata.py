@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from ..parameters import PipelineRun
 
 
-def generate_alignment_iterdata(args: PipelineRun, list_fastq: list, fasta_index: str, fasta_file_path):
+def generate_alignment_batches(args: PipelineRun, list_fastq: list, fasta_index: str, fasta_file_path):
     # The iterdata consists of an array where each element is a pair of a fastq chunk and a fasta chunk.
     # Since each fastq chunk needs to be paired with each fasta chunk, the total number of elements in
     # iterdata will be n_fastq_chunks * n_fasta_chunks.

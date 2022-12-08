@@ -4,16 +4,16 @@ from random import randint
 
 import lithops
 
+from .mapping.data_fetch import fetch_fasta_chunk, fetch_fastq_chunk
+from .mapping.map_caller import run_full_alignment
 from .preprocessing.preprocess_fasta import prepare_fasta_chunks
-from .preprocessing.alignment_iterdata import generate_alignment_iterdata
+from .preprocessing.alignment_iterdata import generate_alignment_batches
 from .preprocessing.preprocess_fastq import prepare_fastq_chunks
 import pathlib
 import logging
 
 # map/reduce functions and executor
-from .mapping import map_caller
-from .mapping.alignment_mapper import AlignmentMapper
-from .lithopsproxy import LithopsProxy
+from .cachedlithops import CachedLithopsInvoker
 
 from .parameters import PipelineRun, Lithops, validate_parameters
 from .utils import setup_logging, log_parameters, S3Path
@@ -31,26 +31,26 @@ class VariantCallingPipeline:
         if self.parameters.log_level == logging.DEBUG:
             log_parameters(self.parameters)
 
-        self.lithops = Lithops(storage=lithops.storage.Storage(), invoker=LithopsProxy())
+        self.lithops = Lithops(storage=lithops.storage.Storage(), invoker=CachedLithopsInvoker(self.parameters))
         self.fastq_chunks = None
         self.fasta_chunks = None
+        self.alignment_batches = None
 
     def preprocess(self):
         """
         Prepare requested input data for alignment
         """
         self.fastq_chunks = prepare_fastq_chunks(self.parameters, self.lithops)
+        # fetch_fastq_chunk(self.fastq_chunks[0], 'test.fastq', self.lithops.storage, self.parameters.fastq_path, self.parameters.storage_bucket, self.parameters.fastqgz_idx_keys[0])
         self.fasta_chunks = prepare_fasta_chunks(self.parameters, self.lithops)
+        # fetch_fasta_chunk(self.fasta_chunks[0], 'test', self.lithops.storage, self.parameters.fasta_path)
 
     def align_reads(self):
         """
         Alignment map pipeline step
         """
         assert self.fasta_chunks is not None and self.fastq_chunks is not None, 'generate chunks first!'
-
-        mapfunc = AlignmentMapper(pathlib.Path(self.parameters.fasta_path).stem, self.parameters)
-        map_time = map_caller.map(self.parameters, iterdata, mapfunc, num_chunks)
-        return map_time
+        run_full_alignment(self.parameters, self.lithops, self.fasta_chunks, self.fastq_chunks)
 
     # TODO implement reduce stage
     def reduce(self):

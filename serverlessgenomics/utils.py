@@ -4,6 +4,7 @@ import logging
 import json
 import os
 import shutil
+import subprocess
 
 from contextlib import suppress
 from pathlib import PurePath, _PosixFlavour
@@ -122,7 +123,7 @@ class S3Path(PurePath):
         return '{}(bucket={},key={})'.format(self.__class__.__name__, self.bucket, self.key)
 
 
-def force_delete_path(path):
+def force_delete_local_path(path):
     if os.path.exists(path):
         if os.path.isfile(path):
             os.remove(path)
@@ -151,14 +152,24 @@ def setup_logging(level=logging.INFO):
     root_logger.setLevel(level)
     ch = logging.StreamHandler()
     ch.setLevel(logging.DEBUG)
-    formatter = logging.Formatter("[%(asctime)s] %(levelname)s [%(name)s.%(funcName)s:%(lineno)d] %(message)s")
+    formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s.%(funcName)s:%(lineno)d -- %(message)s")
     ch.setFormatter(formatter)
     root_logger.addHandler(ch)
 
 
 def log_parameters(params: PipelineRun):
     for k, v in asdict(params).items():
-        logger.debug('\t%s = %s', k, repr(v))
+        logger.debug('\t\t%s = %s', k, repr(v))
+
+
+def get_gztool_path():
+    """
+    Utility function that returns the absolute path for gzip file binary or raises exception if it is not found
+    """
+    proc = subprocess.run(['which', 'gztool'], check=True, capture_output=True, text=True)
+    path = proc.stdout.rstrip('\n')
+    logger.debug('Using gztool located in %s', path)
+    return path
 
 
 def copy_to_runtime(storage: Storage, bucket: str, folder: str, file_name: str, byte_range={}, fasta=None):

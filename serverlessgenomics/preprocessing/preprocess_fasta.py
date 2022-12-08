@@ -8,8 +8,6 @@ import itertools
 from typing import TYPE_CHECKING
 from functools import reduce
 
-from lithops import Storage
-
 from ..utils import try_head_object
 import bz2
 
@@ -143,8 +141,8 @@ def generate_faidx_from_s3(pipeline_params: PipelineRun, lithops: Lithops):
                       'fasta_size': fasta_file_sz,
                       'num_chunks': pipeline_params.fasta_chunks}
         extra_env = {'BUCKET': pipeline_params.storage_bucket, 'FAIDX_KEY': pipeline_params.faidx_key}
-        num_sequences = lithops.invoker.map_reduce(stage='generate_faidx', pipeline_params=pipeline_params,
-                                                   map_function=create_index_chunked, map_iterdata=map_iterdata,
+        num_sequences = lithops.invoker.map_reduce(map_function=create_index_chunked,
+                                                   map_iterdata=map_iterdata,
                                                    extra_args=extra_args, extra_env=extra_env,
                                                    reduce_function=reduce_chunked_indexes)
 
@@ -198,6 +196,7 @@ def get_fasta_byte_ranges(pipeline_params: PipelineRun, lithops: Lithops, num_se
             else:
                 raise Exception('ERROR: there was a problem getting the last byte of a fasta chunk.')
 
+        fa_chunk['chunk_id'] = j
         fasta_chunks.append(fa_chunk)
         j += 1
         min = fa_chunk_size * j
@@ -214,16 +213,3 @@ def prepare_fasta_chunks(pipeline_params: PipelineRun, lithops: Lithops):
     num_sequences = generate_faidx_from_s3(pipeline_params, lithops)
     fasta_chunks = get_fasta_byte_ranges(pipeline_params, lithops, num_sequences)
     return fasta_chunks
-
-
-def create_fasta_chunk_for_runtime(storage: Storage, bucket: str, fasta: dict, byte_range: dict, folder: str,
-                                   file_name: str):
-    extra_args = {'Range': f"bytes={fasta['chunk']['offset_head']}-{fasta['chunk']['offset_base']}"}
-    data = list(re.finditer(r">.+\n",
-                            storage.get_object(bucket=bucket, key=folder + file_name, extra_get_args=extra_args).decode(
-                                'utf-8')))[0].group()
-    base = storage.get_object(bucket=bucket, key=folder + file_name, extra_get_args=byte_range).decode('utf-8')
-
-    data += base[1::] if base[0:1] == '\n' else base  # Data has already a '\n', (data == >...\n), avoid double '\n'
-
-    return data.encode('utf-8')
