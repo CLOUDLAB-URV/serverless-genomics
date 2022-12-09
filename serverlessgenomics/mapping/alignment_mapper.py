@@ -70,7 +70,7 @@ def gem_indexer_mapper(pipeline_params: PipelineRun, mapper_id: str, fasta_chunk
         # TODO support implement paired-end, replace not-used with 2nd fastq chunk
         # TODO use proper tmp directory instead of uuid base name
         # TODO add support for sra source
-        base_name = uuid.uuid4().hex
+        base_name = 'SRRXXXXXX'
         cmd = ['/function/bin/map_index_and_filter_map_file_cmd_awsruntime.sh', gem_index_filename,
                fastq_chunk_filename, "not-used", base_name, "s3", "single-end"]
         print(' '.join(cmd))
@@ -87,21 +87,28 @@ def gem_indexer_mapper(pipeline_params: PipelineRun, mapper_id: str, fasta_chunk
         filtered_map_filename = os.path.join(tmp_dir, base_name + "_" + str(mapper_id) + "_filt_wline_no.map")
         shutil.move(base_name + "_filt_wline_no.map", filtered_map_filename)
 
-        # Compress the filtered map file
-        zip_filename = filtered_map_filename + ".zip"
-        with zipfile.ZipFile(zip_filename, 'w', compression=zipfile.ZIP_BZIP2, compresslevel=9) as zf:
+        # Compress outputs
+        zipped_map_index_filename = map_index_filename + ".bz2"
+        with zipfile.ZipFile(zipped_map_index_filename, 'w', compression=zipfile.ZIP_BZIP2, compresslevel=9) as zf:
+            zf.write(map_index_filename)
+
+        zipped_filtered_map_filename = filtered_map_filename + ".bz2"
+        with zipfile.ZipFile(zipped_filtered_map_filename, 'w', compression=zipfile.ZIP_BZIP2, compresslevel=9) as zf:
             zf.write(filtered_map_filename)
 
         # Copy intermediate files to storage for index correction
-        map_index_key = os.path.join(pipeline_params.tmp_prefix, mapper_id, map_index_filename)
-        storage.upload_file(file_name=map_index_filename, bucket=pipeline_params.storage_bucket, key=map_index_key)
+        map_index_key = os.path.join(pipeline_params.tmp_prefix, pipeline_params.execution_id, mapper_id,
+                                     base_name + '_map.index.txt.bz2')
+        storage.upload_file(file_name=zipped_map_index_filename, bucket=pipeline_params.storage_bucket,
+                            key=map_index_key)
 
-        filtered_map_key = os.path.join(pipeline_params.tmp_prefix, mapper_id, filtered_map_filename)
-        storage.upload_file(file_name=filtered_map_filename, bucket=pipeline_params.storage_bucket,
+        filtered_map_key = os.path.join(pipeline_params.tmp_prefix, pipeline_params.execution_id, mapper_id,
+                                        base_name + '_filt_wline_no.map.bz2')
+        storage.upload_file(file_name=zipped_filtered_map_filename, bucket=pipeline_params.storage_bucket,
                             key=filtered_map_key)
     finally:
         os.chdir(pwd)
-        # force_delete_local_path(tmp_dir)
+        force_delete_local_path(tmp_dir)
 
     return mapper_id, map_index_key, filtered_map_key
 
