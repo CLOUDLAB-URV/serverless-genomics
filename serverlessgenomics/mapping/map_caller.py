@@ -16,8 +16,9 @@ def generate_gem_indexer_mapper_iterdata(pipeline_params, fasta_chunks, fastq_ch
     iterdata = []
     for fa_i, fa_ch in enumerate(fasta_chunks):
         for fq_i, fq_ch in enumerate(fastq_chunks):
-            params = {'pipeline_params': pipeline_params, 'mapper_id': f'fa{fa_i}-fq{fq_i}',
-                      'fasta_chunk': fa_ch, 'fastq_chunk': fq_ch}
+            params = {'pipeline_params': pipeline_params,
+                      'fasta_chunk_id': fa_i, 'fasta_chunk': fa_ch,
+                      'fastq_chunk': fq_ch, 'fastq_chunk_id': fq_i}
             iterdata.append(params)
     return iterdata
 
@@ -50,6 +51,7 @@ def run_full_alignment(pipeline_params: PipelineRun, lithops: Lithops, fasta_chu
 
     iterdata = generate_gem_indexer_mapper_iterdata(pipeline_params, fasta_chunks, fastq_chunks)
     gem_indexer_mapper_result = lithops.invoker.map(gem_indexer_mapper, iterdata)
+    print(gem_indexer_mapper_result)
 
     # Load futures from previous execution
     # map1_futures = af.load_cache(map1_cachefile, pipeline_params)

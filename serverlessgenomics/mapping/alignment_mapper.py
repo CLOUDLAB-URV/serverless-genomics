@@ -1,30 +1,29 @@
 import logging
 import os
-import re
 import multiprocessing
 import shutil
-import subprocess
 import subprocess as sp
 import tempfile
-import uuid
 from typing import Tuple
 import pandas as pd
 from numpy import int64
 
 from .data_fetch import fetch_fastq_chunk, fetch_fasta_chunk
-# from ..preprocessing.preprocess_fastq import fastq_to_mapfun
-from .. import aux_functions as aux
 from ..utils import copy_to_runtime, force_delete_local_path
 from ..parameters import PipelineRun
 from lithops import Storage
+from lithops.storage.utils import StorageNoSuchKeyError
 import zipfile
 
 logger = logging.getLogger(__name__)
 
 
-def gem_indexer_mapper(pipeline_params: PipelineRun, mapper_id: str, fasta_chunk: dict, fastq_chunk: dict,
+def gem_indexer_mapper(pipeline_params: PipelineRun,
+                       fasta_chunk_id: int, fasta_chunk: dict,
+                       fastq_chunk_id: int, fastq_chunk: dict,
                        storage: Storage):
     """
+    Lithops callee function
     First map function to filter and map fasta + fastq chunks. Some intermediate files
     are uploaded into the cloud storage for subsequent index correction, after which
     the final part of the map function (map_alignment2) can be executed.
@@ -39,6 +38,26 @@ def gem_indexer_mapper(pipeline_params: PipelineRun, mapper_id: str, fasta_chunk
     Returns:
         Tuple[str]: multiple values needed for index correction and the second map phase
     """
+
+    mapper_id = f'fa{fasta_chunk_id}-fq{fastq_chunk_id}'
+    base_name = 'SRRXXXXXX'
+    map_index_key = os.path.join(pipeline_params.tmp_prefix, pipeline_params.run_id,
+                                 f'fq{fastq_chunk_id}', f'fa{fasta_chunk_id}', base_name + '_map.index.txt.bz2')
+    filtered_map_key = os.path.join(pipeline_params.tmp_prefix, pipeline_params.run_id,
+                                    f'fq{fastq_chunk_id}', f'fa{fasta_chunk_id}',
+                                    base_name + '_filt_wline_no.map.bz2')
+
+    # Check if output files already exist in storage
+    try:
+        storage.head_object(bucket=pipeline_params.storage_bucket, key=map_index_key)
+        storage.head_object(bucket=pipeline_params.storage_bucket, key=filtered_map_key)
+        # If they exist, return the keys and skip computing this chunk
+        return fastq_chunk_id, fasta_chunk_id, map_index_key, filtered_map_key
+    except StorageNoSuchKeyError:
+        # If any output is missing, proceed
+        pass
+
+    # Make temp dir and ch into it, save pwd to restore it later
     tmp_dir = tempfile.mkdtemp()
     pwd = os.getcwd()
     os.chdir(tmp_dir)
@@ -54,8 +73,10 @@ def gem_indexer_mapper(pipeline_params: PipelineRun, mapper_id: str, fasta_chunk
         fasta_chunk_filename = f"chunk_{fasta_chunk['chunk_id']}.fasta"
         fetch_fasta_chunk(fasta_chunk, fasta_chunk_filename, storage, pipeline_params.fasta_path)
 
+        # TODO try to move fasta indexing to another preprocessing step
         gem_index_filename = os.path.join(f'{mapper_id}.gem')
         cpus = multiprocessing.cpu_count()
+
         # gem-indexer appends .gem to output file
         cmd = ['gem-indexer', '--input', fasta_chunk_filename, '--threads', str(cpus), '-o',
                gem_index_filename.replace('.gem', '')]
@@ -70,15 +91,12 @@ def gem_indexer_mapper(pipeline_params: PipelineRun, mapper_id: str, fasta_chunk
         # TODO support implement paired-end, replace not-used with 2nd fastq chunk
         # TODO use proper tmp directory instead of uuid base name
         # TODO add support for sra source
-        base_name = 'SRRXXXXXX'
         cmd = ['/function/bin/map_index_and_filter_map_file_cmd_awsruntime.sh', gem_index_filename,
                fastq_chunk_filename, "not-used", base_name, "s3", "single-end"]
         print(' '.join(cmd))
         out = sp.run(cmd, capture_output=True)
         print(out.stdout.decode('utf-8'))
         print(out.stderr.decode('utf-8'))
-
-        print(os.listdir('.'))
 
         # Reorganize file names
         map_index_filename = os.path.join(tmp_dir, base_name + "_map.index.txt")
@@ -96,25 +114,21 @@ def gem_indexer_mapper(pipeline_params: PipelineRun, mapper_id: str, fasta_chunk
         with zipfile.ZipFile(zipped_filtered_map_filename, 'w', compression=zipfile.ZIP_BZIP2, compresslevel=9) as zf:
             zf.write(filtered_map_filename)
 
-        # Copy intermediate files to storage for index correction
-        map_index_key = os.path.join(pipeline_params.tmp_prefix, pipeline_params.execution_id, mapper_id,
-                                     base_name + '_map.index.txt.bz2')
+        # Copy result files to storage for index correction
         storage.upload_file(file_name=zipped_map_index_filename, bucket=pipeline_params.storage_bucket,
                             key=map_index_key)
-
-        filtered_map_key = os.path.join(pipeline_params.tmp_prefix, pipeline_params.execution_id, mapper_id,
-                                        base_name + '_filt_wline_no.map.bz2')
         storage.upload_file(file_name=zipped_filtered_map_filename, bucket=pipeline_params.storage_bucket,
                             key=filtered_map_key)
     finally:
         os.chdir(pwd)
         force_delete_local_path(tmp_dir)
 
-    return mapper_id, map_index_key, filtered_map_key
+    return fastq_chunk_id, fasta_chunk_id, map_index_key, filtered_map_key
 
 
 def index_correction(setname: str, bucket: str, exec_param: str, storage: Storage):
     """
+    Lithops callee function
     Corrects the index after the first map iteration.
     All the set files must have the prefix "map_index_files/".
     Corrected indices will be stored with the prefix "corrected_index/".

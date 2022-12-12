@@ -4,7 +4,6 @@ import io
 import logging
 import re
 import subprocess
-import os
 import tempfile
 import time
 from math import ceil
@@ -13,11 +12,10 @@ from typing import TYPE_CHECKING, List, Tuple
 import numpy as np
 import pandas as pd
 
-from ..utils import force_delete_local_path, S3Path, try_head_object
+from ..utils import force_delete_local_path, S3Path, try_head_object, get_gztool_path
 
 if TYPE_CHECKING:
     from ..parameters import PipelineRun, Lithops
-    from mypy_boto3_s3 import S3Client
     import lithops
 
 logger = logging.getLogger(__name__)
@@ -34,9 +32,9 @@ def generate_idx_from_gzip(pipeline_params: PipelineRun, gzip_file_path: S3Path,
     Lithops callee function
     Create index file from gzip archive using gztool (https://github.com/circulosmeos/gztool)
     """
-    gztool = _get_gztool_path()
+    gztool = get_gztool_path()
     tmp_index_file_name = tempfile.mktemp()
-    s3: S3Client = storage.get_client()
+    s3 = storage.get_client()
 
     try:
         res = s3.get_object(Bucket=gzip_file_path.bucket, Key=gzip_file_path.key)
@@ -115,7 +113,7 @@ def get_ranges_from_line_pairs(pipeline_params: PipelineRun, lithops: Lithops, p
 
     head_fastq = lithops.storage.head_object(bucket=pipeline_params.fastq_path.bucket,
                                              key=pipeline_params.fastq_path.key)
-    fastqgz_sz = head_fastq['content-length']
+    fastqgz_sz = int(head_fastq['content-length'])
 
     byte_ranges = [None] * len(pairs)
     for i, (line_0, line_1) in enumerate(pairs):

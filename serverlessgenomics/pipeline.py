@@ -1,30 +1,32 @@
-import time
-import sys
-from random import randint
+import shelve
+import logging
 
 import lithops
 
-from .mapping.data_fetch import fetch_fasta_chunk, fetch_fastq_chunk
 from .mapping.map_caller import run_full_alignment
 from .preprocessing.preprocess_fasta import prepare_fasta_chunks
-from .preprocessing.alignment_iterdata import generate_alignment_batches
 from .preprocessing.preprocess_fastq import prepare_fastq_chunks
-import pathlib
-import logging
 
 # map/reduce functions and executor
 from .cachedlithops import CachedLithopsInvoker
 
 from .parameters import PipelineRun, Lithops, validate_parameters
-from .utils import setup_logging, log_parameters, S3Path
+from .constants import CACHE_PATH
+from .utils import setup_logging, log_parameters
 
 logger = logging.getLogger(__name__)
 
 
 class VariantCallingPipeline:
-    def __init__(self, **params):
+    def __init__(self, override_id=None, **params):
+        params['override_id'] = override_id
         self.parameters: PipelineRun = validate_parameters(params)
+        self.fastq_chunks = None
+        self.fasta_chunks = None
+        self.alignment_batches = None
+        self._setup()
 
+    def _setup(self):
         setup_logging(self.parameters.log_level)
         logger.info('Init Serverless Variant Calling Pipeline')
 
@@ -32,9 +34,20 @@ class VariantCallingPipeline:
             log_parameters(self.parameters)
 
         self.lithops = Lithops(storage=lithops.storage.Storage(), invoker=CachedLithopsInvoker(self.parameters))
-        self.fastq_chunks = None
-        self.fasta_chunks = None
-        self.alignment_batches = None
+
+        with shelve.open(CACHE_PATH) as cache:
+            cache[f'{self.parameters.run_id}/parameters'] = self.parameters
+
+    @classmethod
+    def restore_run(cls, run_id: str):
+        self = cls.__new__(cls)
+        key = f'{run_id}/parameters'
+        with shelve.open(CACHE_PATH) as cache:
+            if key not in cache:
+                raise KeyError(f'run {run_id} not found in cache')
+            self.parameters = cache[key]
+        self._setup()
+        return self
 
     def preprocess(self):
         """

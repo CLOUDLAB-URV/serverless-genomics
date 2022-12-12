@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Optional
+from typing import Optional
 
 import lithops
 import uuid
@@ -11,8 +11,6 @@ import uuid
 from .cachedlithops import CachedLithopsInvoker
 from .utils import S3Path
 
-if TYPE_CHECKING:
-    from mypy_boto3_s3.client import S3Client
 
 
 @dataclass(frozen=True)
@@ -31,7 +29,7 @@ class PipelineRun:
     # SRA identifier for fastq read input
     fastq_sra: Optional[str] = None
     # Execution run UUID
-    execution_id: str = str(uuid.uuid4())
+    run_id: str = str(uuid.uuid4())
     # TODO what is tolerance? (ask Lucio)
     tolerance: int = 0
 
@@ -82,6 +80,10 @@ def validate_parameters(params) -> PipelineRun:
         raise KeyError()
     if 'fasta_chunks' not in params:
         raise KeyError()
+
+    if params['override_id'] is not None:
+        params['run_id'] = params['override_id']
+        del params['override_id']
 
     params['fasta_path'] = S3Path.from_uri(params['fasta_path'])
     if 'fastq_path' in params:

@@ -105,7 +105,7 @@ RUN pip install --no-cache-dir \
         scipy \
         kafka-python \
         fastparquet \
-        lithops
+        git+https://github.com/lithops-cloud/lithops.git
 
  # Set working directory to function root directory
 WORKDIR ${FUNCTION_DIR}
