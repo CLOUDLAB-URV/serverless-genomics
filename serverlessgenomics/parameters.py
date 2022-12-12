@@ -12,7 +12,6 @@ from .cachedlithops import CachedLithopsInvoker
 from .utils import S3Path
 
 
-
 @dataclass(frozen=True)
 class PipelineRun:
     """

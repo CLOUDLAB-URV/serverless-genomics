@@ -56,7 +56,7 @@ class CachedLithopsInvoker:
         if fut is None:
             fut = self.__fexec.call_async(func, data, extra_env, runtime_memory, timeout,
                                           include_modules, exclude_modules)
-            self._save_cache(func.__name__, fut)
+            # self._save_cache(func.__name__, fut)
         return fut
 
     def call(self, func, data, extra_env=None, runtime_memory=None, timeout=None, include_modules=[],
@@ -65,7 +65,7 @@ class CachedLithopsInvoker:
         if fut is None:
             fut = self.__fexec.call_async(func, data, extra_env, runtime_memory, timeout,
                                           include_modules, exclude_modules)
-            self._save_cache(func.__name__, fut)
+            # self._save_cache(func.__name__, fut)
         result = self.__fexec.get_result(fs=fut)
         self._save_cache(func.__name__, fut)
         return result
@@ -78,7 +78,7 @@ class CachedLithopsInvoker:
             fut = self.__fexec.map(map_function, map_iterdata, chunksize, extra_args, extra_env, runtime_memory,
                                    obj_chunk_size, obj_chunk_number, obj_newline, timeout, include_modules,
                                    exclude_modules)
-            self._save_cache(map_function.__name__, fut)
+            # self._save_cache(map_function.__name__, fut)
         return fut
 
     def map(self, map_function, map_iterdata, chunksize=None, extra_args=None, extra_env=None, runtime_memory=None,
@@ -89,7 +89,7 @@ class CachedLithopsInvoker:
             fut = self.__fexec.map(map_function, map_iterdata, chunksize, extra_args, extra_env, runtime_memory,
                                    obj_chunk_size, obj_chunk_number, obj_newline, timeout, include_modules,
                                    exclude_modules)
-            self._save_cache(map_function.__name__, fut)
+            # self._save_cache(map_function.__name__, fut)
         result = self.__fexec.get_result(fs=fut)
         self._save_cache(map_function.__name__, fut)
         return result
@@ -104,7 +104,7 @@ class CachedLithopsInvoker:
                                           map_runtime_memory, reduce_runtime_memory, timeout, obj_chunk_size,
                                           obj_chunk_number, obj_newline, obj_reduce_by_key, spawn_reducer,
                                           include_modules, exclude_modules)
-            self._save_cache(map_function.__name__ + '-' + reduce_function.__name__, fut)
+            # self._save_cache(map_function.__name__ + '-' + reduce_function.__name__, fut)
         return fut
 
     def map_reduce(self, map_function, map_iterdata, reduce_function, chunksize=None, extra_args=None, extra_env=None,
@@ -117,7 +117,7 @@ class CachedLithopsInvoker:
                                           map_runtime_memory, reduce_runtime_memory, timeout, obj_chunk_size,
                                           obj_chunk_number, obj_newline, obj_reduce_by_key, spawn_reducer,
                                           include_modules, exclude_modules)
-            self._save_cache(map_function.__name__ + '-' + reduce_function.__name__, fut)
+            # self._save_cache(map_function.__name__ + '-' + reduce_function.__name__, fut)
         result = self.__fexec.get_result(fs=fut)
         self._save_cache(map_function.__name__ + '-' + reduce_function.__name__, fut)
         return result

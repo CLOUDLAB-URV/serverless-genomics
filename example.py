@@ -10,8 +10,8 @@ if __name__ == '__main__':
         fastq_chunks=4,
         log_level=logging.DEBUG,
         storage_bucket='aitor-serverless-genomics',
+        override_id='616d81c4-192c-4775-92f0-41bcf3653d0a'
     )
     # pipeline = VariantCallingPipeline.restore_run('616d81c4-192c-4775-92f0-41bcf3653d0a')
-    # pipeline.clean_all()
     # pipeline.preprocess()
     pipeline.run_pipeline()
