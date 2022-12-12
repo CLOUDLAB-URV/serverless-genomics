@@ -1,89 +1,92 @@
+from __future__ import annotations
+
 import logging
+import os
 from dataclasses import dataclass
+from typing import Optional
 
+import lithops
+import uuid
 
-def validate_parameters(params):
-    if 'fasta_bucket' not in params:
-        params['fasta_bucket'] = params['bucket']
+from .cachedlithops import CachedLithopsInvoker
+from .utils import S3Path
 
-    params['fastq_chunk_size'] = 4 * int(params['fastq_read_n'])
-
-    if 'fastq2' not in params:
-        params['seq_type'] = "single-end"
-    else:
-        params['seq_type'] = "paired-end"
-
-    if 'checkpoints' in params and params['checkpoints'] in ('True', 'true', 'Yes', 'yes', 'y', '1'):
-        params['checkpoints'] = True
-    else:
-        params['checkpoints'] = False
-
-    params['execution_name'] = f"{params['fq_seqname']}_" \
-                               f"{params['fasta_file']}_" \
-                               f"{params['fastq_read_n']}_" \
-                               f"{params['fasta_workers']}"
-
-    return PipelineParameters(**params)
 
 
 @dataclass(frozen=True)
-class PipelineParameters:
-    # Mandatory Parameters
-    fasta_file: str
-    bucket: str
-    fasta_bucket: str
-    fasta_workers: int
-    fastq_chunk_size: int
-    seq_type: str
-    execution_name: str
-
-    # Optional Parameters
-    # FastQ names
-    fq_seqname: str = None
-    fastq_file: str = ""
-
-    # From input, determine whether it is paired- or single-end sequencing
-    fastq_file2: str = ""
-
-    # Cloud Storage Settings
-    cloud_adr: str = "aws"
-
-    # Fastq data source (SRA)
-    datasource: str = "s3"
-
-    # File Splitting Parameters
-    fastq_read_n: int = None
-
-    # Pipeline-Specific Parameters
+class PipelineRun:
+    """
+    Dataclass to store a pipeline's execution state
+    """
+    # Storage path for fasta input file
+    fasta_path: S3Path
+    # Number of chunks to split fasta input file into
+    fasta_chunks: int
+    # Number of chunks to split fastq input file into
+    fastq_chunks: int
+    # Storage path for fastq input file
+    fastq_path: Optional[S3Path] = None
+    # SRA identifier for fastq read input
+    fastq_sra: Optional[str] = None
+    # Execution run UUID
+    run_id: str = str(uuid.uuid4())
+    # TODO what is tolerance? (ask Lucio)
     tolerance: int = 0
-    file_format: str = "parquet"
 
-    # Run Settings
-    iterdata_n: ... = None
-    function_n: ... = "All"
-    concur_fun: int = 10000
-    temp_to_s3: bool = False
-    runtime_id: str = 'lumimar/hutton-genomics-v03:18'
+    # Lithops settings
+    max_workers: int = 1000
+    runtime_image: str = None
     runtime_mem: int = 1024
-    runtime_mem_r: int = 4096
-    runtime_storage: int = 4000
-    buffer_size: int = "75%"
-    func_timeout_map: int = 2400
+    runtime_timeout: int = 2400
     func_timeout_reduce: int = 2400
-    skip_map: bool = False
-    lb_method: str = "select"
+    lb_method: str = 'select'
     checkpoints: bool = False
     log_level: int = logging.INFO
 
-    # Debug Parameters
-    gem_test: bool = False
-    pre_processing_only: bool = False
-    debug: bool = True
+    # Bucket name with write permissions to store preprocessed, intermediate and output data
+    storage_bucket: str = 'serverless-genomics'
+    # Prefix for fastqgz generated index keys
+    fastqgz_idx_prefix: str = 'fastqgz-indexes/'
+    # Prefix for faidx generated index keys
+    faidx_prefix: str = 'faidx-indexes/'
+    # Prefix for generated reference genome indexes
+    genome_index_prefix: str = 'fasta-indexes/'
+    # Prefix for output data keys
+    output_prefix: str = 'output/'
+    # Prefix for temporal data keys
+    tmp_prefix: str = 'tmp/'
 
-    # S3 prefixes (cloud folders)
-    fasta_folder: str = "fasta/"
-    fastq_folder: str = "fastqgz/"
-    fasta_folder_index: str = "fasta-indexes/"
-    idx_folder: str = "fastq-indexes/"
-    out_folder: str = "outputs/"
-    s3_temp_folder: str = "temp_outputs/"
+    @property
+    def fastqgz_idx_keys(self):
+        """
+        Returns a tuple for fastqgz index keys in storage as (index file key, tab data key)
+        """
+        return (os.path.join(self.fastqgz_idx_prefix, self.fastq_path.key + '.idx'),
+                os.path.join(self.fastqgz_idx_prefix, self.fastq_path.key + '.tab'))
+
+    @property
+    def faidx_key(self):
+        return os.path.join(self.faidx_prefix, self.fasta_path.key + '.fai')
+
+
+@dataclass(frozen=True)
+class Lithops:
+    storage: lithops.Storage
+    invoker: CachedLithopsInvoker
+
+
+def validate_parameters(params) -> PipelineRun:
+    if 'fasta_path' not in params:
+        raise KeyError()
+    if 'fasta_chunks' not in params:
+        raise KeyError()
+
+    if params['override_id'] is not None:
+        params['run_id'] = params['override_id']
+        del params['override_id']
+
+    params['fasta_path'] = S3Path.from_uri(params['fasta_path'])
+    if 'fastq_path' in params:
+        params['fastq_path'] = S3Path.from_uri(params['fastq_path'])
+
+    return PipelineRun(**params)

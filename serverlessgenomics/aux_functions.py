@@ -3,15 +3,15 @@ from typing import List
 import pickle
 from lithops.utils import FuturesList
 from lithops import Storage
-from .parameters import PipelineParameters
+from .parameters import PipelineRun
 
 
 def copy_to_s3(storage: Storage, bucket: str, file_name: str, temp_to_s3: bool, folder_name: str = "") -> str:
     """
     Copy file from local storage to S3.
     """
-    if temp_to_s3==True:
-        destination_key= folder_name + os.path.basename(file_name)
+    if temp_to_s3 == True:
+        destination_key = folder_name + os.path.basename(file_name)
 
         with open(file_name, 'rb') as file:
             data = file.read()
@@ -20,7 +20,7 @@ def copy_to_s3(storage: Storage, bucket: str, file_name: str, temp_to_s3: bool, 
     return ""
 
 
-def load_cache(filename: str, args:PipelineParameters) -> FuturesList:
+def load_cache(filename: str, args: PipelineRun) -> FuturesList:
     """
     Load a futures local file from previous execution
     """
@@ -31,8 +31,9 @@ def load_cache(filename: str, args:PipelineParameters) -> FuturesList:
         return futures
     else:
         return 0
-    
-def dump_cache(filename: str, futures: FuturesList, args:PipelineParameters):
+
+
+def dump_cache(filename: str, futures: FuturesList, args: PipelineRun):
     """
     Store the lithops futures variable in local storage
     """
@@ -41,18 +42,19 @@ def dump_cache(filename: str, futures: FuturesList, args:PipelineParameters):
     file = open(f'/tmp/{args.execution_name}/{filename}', 'wb')
     pickle.dump(futures, file)
     file.close()
-    
-def delete_files(storage: Storage, args:PipelineParameters, cloud_prefixes: List[str] = [], local_files: List[str] = []):
+
+
+def delete_files(storage: Storage, args: PipelineRun, cloud_prefixes: List[str] = [], local_files: List[str] = []):
     """
     Delete a list of cloud and local files
     """
-    #Delete cloud files
+    # Delete cloud files
     for prefix in cloud_prefixes:
-        keys = storage.list_keys(args.bucket, prefix)
+        keys = storage.list_keys(args.storage_bucket, prefix)
         for key in keys:
-            storage.delete_object(args.bucket, key)
-    
-    #Delete local files        
+            storage.delete_object(args.storage_bucket, key)
+
+    # Delete local files
     for file in local_files:
-        if (os.path.isfile(file)):
+        if os.path.isfile(file):
             os.remove(file)
