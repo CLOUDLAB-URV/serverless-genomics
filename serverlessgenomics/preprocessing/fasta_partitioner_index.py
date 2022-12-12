@@ -8,7 +8,6 @@ class FastaPartitionerIndex:
     def __init__(self, bucket):
         self.bucket = bucket
 
-    # Generate metadata from fasta file
     def generate_chunks(self, storage, id, key, chunk_size, obj_size, partitions):
         '''
         Searches for the different sequences in the given chunk and returns a list of them
