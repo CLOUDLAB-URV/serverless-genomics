@@ -1,9 +1,9 @@
+import collections
+import copy
 import logging
-import time
-from .alignment_mapper import gem_indexer_mapper, filter_index_to_mpileup
+
+from .alignment_mapper import gem_indexer_mapper, index_correction, filter_index_to_mpileup
 from ..parameters import PipelineRun, Lithops
-import os
-from .. import aux_functions as af
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +20,37 @@ def generate_gem_indexer_mapper_iterdata(pipeline_params, fasta_chunks, fastq_ch
                       'fasta_chunk_id': fa_i, 'fasta_chunk': fa_ch,
                       'fastq_chunk': fq_ch, 'fastq_chunk_id': fq_i}
             iterdata.append(params)
+    return iterdata
+
+
+def generate_index_correction_iterdata(pipeline_params, gem_mapper_output):
+    # Group gem mapper output by fastq chunk id
+    fq_groups = collections.defaultdict(list)
+    for fq, _, map_key, _ in gem_mapper_output:
+        fq_groups[fq].append(map_key)
+
+    iterdata = [{'pipeline_params': pipeline_params,
+                 'fastq_chunk_id': fq_id,
+                 'map_index_keys': map_keys} for fq_id, map_keys in fq_groups.items()]
+
+    return iterdata
+
+
+def generate_index_to_mpileup_iterdata(pipeline_params, fasta_chunks, fastq_chunks, gem_mapper_output, corrected_indexes):
+    iterdata = []
+
+    # Convert corrected index output (list of tuples) to sorted list by fastq chunk id
+    corrected_indexes_fq = [tup[1] for tup in sorted(corrected_indexes, key=lambda tup: tup[0])]
+
+    for fq_i, fa_i, _, filter_map_index in gem_mapper_output:
+        iterdata.append({'pipeline_params': pipeline_params,
+                         'fasta_chunk_id': fa_i,
+                         'fasta_chunk': fasta_chunks[fa_i],
+                         'fastq_chunk_id': fq_i,
+                         'fastq_chunk': fastq_chunks[fq_i],
+                         'filtered_map_key': filter_map_index,
+                         'corrected_index_key': corrected_indexes_fq[fq_i]})
+
     return iterdata
 
 
@@ -71,7 +102,12 @@ def run_full_alignment(pipeline_params: PipelineRun, lithops: Lithops, fasta_chu
     ###################################################################
     #### MAP: GENERATE CORRECTED INDEXES
     ###################################################################
-    # logger.debug("PROCESSING INDEX CORRECTION")
+    logger.debug("PROCESSING INDEX CORRECTION")
+
+    iterdata = generate_index_correction_iterdata(pipeline_params, gem_indexer_mapper_result)
+    index_correction_result = lithops.invoker.map(index_correction, iterdata)
+
+    print(index_correction_result)
 
     # Load futures from previous execution
     # correction_futures = af.load_cache(correction_cachefile, pipeline_params)
@@ -98,7 +134,13 @@ def run_full_alignment(pipeline_params: PipelineRun, lithops: Lithops, fasta_chu
     ###################################################################
     #### MAP: STAGE 2
     ###################################################################
-    # print("PROCESSING MAP: STAGE 2")
+    logger.debug("PROCESSING MAP: STAGE 2")
+    iterdata = generate_index_to_mpileup_iterdata(pipeline_params, fasta_chunks, fastq_chunks, gem_indexer_mapper_result, index_correction_result)
+    print(iterdata)
+
+    alignment_output = lithops.invoker.map(filter_index_to_mpileup, iterdata)
+    print(alignment_output)
+
     #
     # # Load futures from previous execution
     # map2_futures = af.load_cache(map2_cachefile, pipeline_params)
