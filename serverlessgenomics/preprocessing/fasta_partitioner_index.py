@@ -10,6 +10,9 @@ class FastaPartitionerIndex:
 
     # Generate metadata from fasta file
     def generate_chunks(self, storage, id, key, chunk_size, obj_size, partitions):
+        '''
+        Searches for the different sequences in the given chunk and returns a list of them
+        '''
         min_range = id * chunk_size
         max_range = int(obj_size) if id == partitions - 1 else (id + 1) * chunk_size
         data = storage.get_object(bucket=self.bucket, key=key, extra_get_args={'Range': f'bytes={min_range}-{max_range - 1}'}).decode('utf-8')
@@ -36,9 +39,9 @@ class FastaPartitionerIndex:
                             content.append(f">> <Y> {str(offset)} ^{text}^")  # Split sequences
                         else:  # When the first header found is false, when in a split stream there is a split header that has a '>' inside (ex: >tr|...o-alpha-(1->5)-L-e...\n)
                             first_sequence = True
-                if prev != start:  # When if the current sequence base is not empty
-                    # name_id offset_head offset_bases
+                if prev != start:  # When if the current sequence base is not empty                    
                     id_name = m.group().replace('\n', '').split(' ')[0].replace('>', '')
+                    # name_id offset_head offset_bases
                     content.append(f"{id_name} {str(start)} {str(end)}")
                 prev = end
 
@@ -51,6 +54,9 @@ class FastaPartitionerIndex:
         return content
     
     def reduce_generate_chunks(self, results):
+        '''
+        Check the first and last position of each list and solve the sequences that were split. Return a list of lists
+        '''
         if len(results) > 1:            
             results = list(filter(None, results))
             for i, list_seq in enumerate(results):
@@ -69,7 +75,7 @@ class FastaPartitionerIndex:
                                 list_seq[0] = self.__rename_seq(list_seq[0], param, name_id, param_seq_prev[1], param[2])
                             else:
                                 list_seq[0] = seq_prev
-                            list_prev.pop()  # Remove previous sequence  
+                            list_prev.pop()  # Remove previous sequence
         return results
 
     def __rename_seq(sequence, param, name_id, offset_head, offset_base):    
@@ -79,8 +85,11 @@ class FastaPartitionerIndex:
         sequence = sequence.replace('>> ', f'{name_id} ')  # '>>' -> name_id
         return sequence
 
-    def send_index_file_to_storage(self, data, fasta_folder, file_name):
-        storage = lithops.Storage()
+    def send_index_file_to_storage(self, data, fasta_folder, file_name, storage):
+        '''
+        Function that loads the generated index file into the storage. Read a list of lists and converts it into a string, 
+        then uploads it to the storage
+        '''
         data_string = ''
         for list_seq in data:
             data_string += "\n".join(list_seq) if not data_string else "\n" + "\n".join(list_seq)
@@ -89,30 +98,42 @@ class FastaPartitionerIndex:
 
 
 def fasta_partitioner_caller(bucket: str, my_key: str, n_workers: int, fasta_folder: str): 
+    '''
+    Call function of the index generation functions
+    '''
     fexec = lithops.FunctionExecutor()
     storage = lithops.Storage()
 
+    # Get metaddata of the fasta file
     fasta_length = storage.head_object(bucket, my_key)['content-length']
     chunk_size = int(int(fasta_length) / n_workers)
     funct = FastaPartitionerIndex(bucket)
   
-    map_iterdata = [{'key': my_key} for _ in range(n_workers)]
+    # Preparing parameters for serverless functions 
+    map_iterdata = [{'key': my_key}] * n_workers
     extra_args = {'chunk_size': chunk_size, 'obj_size': fasta_length, 'partitions': n_workers}
-
+    
     fexec.map_reduce(map_function=funct.generate_chunks, map_iterdata=map_iterdata, extra_args=extra_args, reduce_function=funct.reduce_generate_chunks)        
     index = fexec.get_result()        
     fexec.clean()
 
-    funct.send_index_file_to_storage(index, fasta_folder, f'{pathlib.Path(my_key).stem}.fai') 
+    if not index:  # Check if the data was generated 
+        raise Exception('ERROR: the generated index file is empty.')
+
+    funct.send_index_file_to_storage(index, fasta_folder, f'{pathlib.Path(my_key).stem}.fai', storage) 
+    
     
 
 def get_fasta_chunks(path_index_file: str, path_fasta_file: str, args: PipelineParameters):
+    '''
+    Read the index file and get the chunks based on the number of workers set
+    '''
     storage = lithops.Storage() 
 
     fasta_chunks = []
     total_size = int(storage.head_object(args.bucket, path_fasta_file)['content-length'])
     fa_chunk_size = int(total_size / int(args.fasta_workers))
-    data_index = storage.get_object(args.bucket, path_index_file).decode('utf-8').split('\n')
+    data_index = storage.get_object(args.bucket, path_index_file).decode('utf-8').split('\n')      
     size_data = len(data_index)
     
     i = j = 0

@@ -27,6 +27,9 @@ def prepare_fasta(args: PipelineParameters):
 
 
 def create_fasta_chunk_for_runtime(storage: Storage, bucket: str, fasta: dict, byte_range: dict, folder: str, file_name: str):
+    '''
+    Get the chunks and download them into the runtime
+    '''
     extra_args={'Range': f"bytes={fasta['chunk']['offset_head']}-{fasta['chunk']['offset_base']}"}
     data = list(re.finditer(r">.+\n", storage.get_object(bucket=bucket, key=folder+file_name, extra_get_args=extra_args).decode('utf-8')))[0].group()
     base = storage.get_object(bucket=bucket, key=folder+file_name, extra_get_args=byte_range).decode('utf-8')
