@@ -3,7 +3,9 @@ from .fasta_partitioner_index import get_fasta_chunks
 import re
 
 def generate_alignment_iterdata(args: PipelineParameters, list_fastq: list, fasta_index: str, fasta_file_path):
-    # The iterdata consists of an array where each element is a pair of a fastq chunk and a fasta chunk.
+    '''
+    Generate an array where here each element is a pair of a fastq chunk and a fasta chunk
+    '''
     # Since each fastq chunk needs to be paired with each fasta chunk, the total number of elements in
     # iterdata will be n_fastq_chunks * n_fasta_chunks.
     
@@ -11,7 +13,7 @@ def generate_alignment_iterdata(args: PipelineParameters, list_fastq: list, fast
     # Get the fasta chunks
     fasta_chunks = get_fasta_chunks(fasta_index, fasta_file_path, args)
 
-    # Generate iterdata
+    # Generate the iterdata
     num_chunks = 0
     iterdata = []
     for fastq_key in list_fastq:
@@ -19,7 +21,7 @@ def generate_alignment_iterdata(args: PipelineParameters, list_fastq: list, fast
         for i, chunk in enumerate(fasta_chunks):
             iterdata.append({'fasta_chunk': {'key_fasta': fasta_file_path, 'key_index': fasta_index, 'id': i, 'chunk': chunk}, 
                             'fastq_chunk': fastq_key, 'exec_param': args.execution_name})
-    # Check iterdata
+    # Check the iterdata
     n_fasta_chunks = len(fasta_chunks)
     if args.iterdata_n is not None:
         iterdata = iterdata[0:int(args.iterdata_n)]

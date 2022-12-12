@@ -127,9 +127,8 @@ class SraMetadata:
                 d['pairing'] = 'paired-end'
             else:
                 d['pairing'] = 'single-end'
-            
-
-            
+              
+                        
 
             d['model'] = try_get(lambda: pkg.find('./EXPERIMENT/PLATFORM/')[0].text)
             d['submitter'] = ''

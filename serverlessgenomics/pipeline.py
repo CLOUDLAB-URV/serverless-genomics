@@ -27,33 +27,32 @@ class VariantCallingPipeline:
 
     def preprocess(self):
         ###################################################################
-        #### GENERATE LIST OF FASTQ CHUNKS (BYTE RANGES)
+        #### GENERATE A LIST OF FASTQ CHUNKS (BYTE RANGES)
         ###################################################################
 
         if self.parameters.datasource == "SRA":
             metadata = sra_meta.SraMetadata()
             accession = metadata.efetch_sra_from_accessions([self.parameters.fq_seqname])
-            seq_type = accession['pairing'].to_string(index=False)
             num_spots = accession['spots'].to_string(index=False)
-            fastq_size = accession['run_size'].to_string(index=False)
             print("Retrieving data from sra...")
-            print("Sequence type: " + seq_type)
+            print("Sequence type: " + accession['pairing'].to_string(index=False))
             print("Number of spots: " + num_spots)
-            print("fastq size: " + fastq_size)
+            print("Fastq size: " + accession['run_size'].to_string(index=False))
         else:
             num_spots = 0
 
+        # Generate the fastq data
         fastq_list = prepare_fastq(int(self.parameters.fastq_read_n), self.parameters.fq_seqname, int(num_spots))
 
         ###################################################################
-        #### GENERATE LIST OF FASTA CHUNKS (if not present)
+        #### GENERATE A LIST OF FASTA CHUNKS (if not present)
         ###################################################################
 
         # Generate the index file from the fasta file source if it does not exist and return the path in the storage to the fasta file
         fasta_index = prepare_fasta(self.parameters)
 
         ###################################################################
-        #### GENERATE ITERDATA AND PREPROCESSING SUMMARY
+        #### GENERATE A ITERDATA AND PREPROCESSING SUMMARY
         ###################################################################
 
         # Creates the lithops iterdata from the fasta and fastq chunk lists
@@ -64,9 +63,9 @@ class VariantCallingPipeline:
         ###################################################################
         #### MAP-REDUCE
         ###################################################################
+        
         mapfunc = AlignmentMapper(pathlib.Path(self.parameters.fasta_file).stem, self.parameters)
-        map_time = map_caller.map(self.parameters, iterdata, mapfunc, num_chunks)
-        return map_time
+        return map_caller.map(self.parameters, iterdata, mapfunc, num_chunks)
         
         
 
