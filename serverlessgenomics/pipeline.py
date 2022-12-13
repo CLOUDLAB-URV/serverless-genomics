@@ -1,84 +1,87 @@
-import time
-import sys
-from random import randint
-from .preprocessing import prepare_fasta, prepare_fastq, generate_alignment_iterdata
-from .parameters import PipelineParameters
-import pathlib
+import shelve
 import logging
 
-# map/reduce functions and executor
-from .mapping import map_caller
-from .mapping.alignment_mapper import AlignmentMapper
-from . import metadata as sra_meta
+import lithops
 
-from .parameters import validate_parameters, PipelineParameters
+from .mapping.map_caller import run_full_alignment
+from .preprocessing.preprocess_fasta import prepare_fasta_chunks
+from .preprocessing.preprocess_fastq import prepare_fastq_chunks
+
+# map/reduce functions and executor
+from .cachedlithops import CachedLithopsInvoker
+
+from .parameters import PipelineRun, Lithops, validate_parameters
+from .constants import CACHE_PATH
 from .utils import setup_logging, log_parameters
 
 logger = logging.getLogger(__name__)
 
 
 class VariantCallingPipeline:
-    def __init__(self, **kwargs):
-        self.parameters: PipelineParameters = validate_parameters(kwargs)
+    def __init__(self, override_id=None, **params):
+        params['override_id'] = override_id
+        self.parameters: PipelineRun = validate_parameters(params)
+        self.fastq_chunks = None
+        self.fasta_chunks = None
+        self.alignment_batches = None
+        self._setup()
+
+    def _setup(self):
         setup_logging(self.parameters.log_level)
         logger.info('Init Serverless Variant Calling Pipeline')
+
         if self.parameters.log_level == logging.DEBUG:
             log_parameters(self.parameters)
 
+        self.lithops = Lithops(storage=lithops.storage.Storage(), invoker=CachedLithopsInvoker(self.parameters))
+
+        with shelve.open(CACHE_PATH) as cache:
+            cache[f'{self.parameters.run_id}/parameters'] = self.parameters
+
+    @classmethod
+    def restore_run(cls, run_id: str):
+        self = cls.__new__(cls)
+        key = f'{run_id}/parameters'
+        with shelve.open(CACHE_PATH) as cache:
+            if key not in cache:
+                raise KeyError(f'run {run_id} not found in cache')
+            self.parameters = cache[key]
+        self._setup()
+        return self
+
     def preprocess(self):
-        ###################################################################
-        #### GENERATE A LIST OF FASTQ CHUNKS (BYTE RANGES)
-        ###################################################################
+        """
+        Prepare requested input data for alignment
+        """
+        self.fastq_chunks = prepare_fastq_chunks(self.parameters, self.lithops)
+        # fetch_fastq_chunk(self.fastq_chunks[0], 'test.fastq', self.lithops.storage, self.parameters.fastq_path, self.parameters.storage_bucket, self.parameters.fastqgz_idx_keys[0])
+        self.fasta_chunks = prepare_fasta_chunks(self.parameters, self.lithops)
+        # fetch_fasta_chunk(self.fasta_chunks[0], 'test', self.lithops.storage, self.parameters.fasta_path)
 
-        if self.parameters.datasource == "SRA":
-            metadata = sra_meta.SraMetadata()
-            accession = metadata.efetch_sra_from_accessions([self.parameters.fq_seqname])
-            num_spots = accession['spots'].to_string(index=False)
-            print("Retrieving data from sra...")
-            print("Sequence type: " + accession['pairing'].to_string(index=False))
-            print("Number of spots: " + num_spots)
-            print("Fastq size: " + accession['run_size'].to_string(index=False))
-        else:
-            num_spots = 0
-
-        # Generate the fastq data
-        fastq_list = prepare_fastq(int(self.parameters.fastq_read_n), self.parameters.fq_seqname, int(num_spots))
-
-        ###################################################################
-        #### GENERATE A LIST OF FASTA CHUNKS (if not present)
-        ###################################################################
-
-        # Generate the index file from the fasta file source if it does not exist and return the path in the storage to the fasta file
-        fasta_index = prepare_fasta(self.parameters)
-
-        ###################################################################
-        #### GENERATE A ITERDATA AND PREPROCESSING SUMMARY
-        ###################################################################
-
-        # Creates the lithops iterdata from the fasta and fastq chunk lists
-        return generate_alignment_iterdata(self.parameters, fastq_list, fasta_index, self.parameters.fasta_folder + self.parameters.fasta_file)
-
-
-    def map_alignment(self, iterdata, num_chunks):
-        ###################################################################
-        #### MAP-REDUCE
-        ###################################################################
-        
-        mapfunc = AlignmentMapper(pathlib.Path(self.parameters.fasta_file).stem, self.parameters)
-        return map_caller.map(self.parameters, iterdata, mapfunc, num_chunks)
-        
-        
+    def align_reads(self):
+        """
+        Alignment map pipeline step
+        """
+        assert self.fasta_chunks is not None and self.fastq_chunks is not None, 'generate chunks first!'
+        run_full_alignment(self.parameters, self.lithops, self.fasta_chunks, self.fastq_chunks)
 
     # TODO implement reduce stage
     def reduce(self):
-        ...
+        raise NotImplementedError()
 
     def run_pipeline(self):
         """
         Execute all pipeline steps in order
         """
-        iterdata, num_chunks = self.preprocess()
-        
-        if not self.parameters.pre_processing_only:
-            map_time = self.map_alignment(iterdata, num_chunks)
-            print("map-reduce phase execution time: " + str(map_time) + "s")
+        self.preprocess()
+        self.align_reads()
+
+    def clean_all(self):
+        keys = self.lithops.storage.list_keys(self.parameters.storage_bucket, prefix=self.parameters.fastqgz_idx_prefix)
+        self.lithops.storage.delete_objects(self.parameters.storage_bucket, keys)
+
+        keys = self.lithops.storage.list_keys(self.parameters.storage_bucket, prefix=self.parameters.faidx_prefix)
+        self.lithops.storage.delete_objects(self.parameters.storage_bucket, keys)
+
+        keys = self.lithops.storage.list_keys(self.parameters.storage_bucket, prefix=self.parameters.tmp_prefix)
+        self.lithops.storage.delete_objects(self.parameters.storage_bucket, keys)

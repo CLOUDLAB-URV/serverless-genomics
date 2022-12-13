@@ -3,7 +3,7 @@
 file=$1
 split=$2
 echo "processing "$file
-out_name=$split".txt"
+out_name=$split
 
 awk -v OUT="$out_name" -v DIR="$1" '
 {

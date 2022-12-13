@@ -1,0 +1,5 @@
+lithops
+boto3
+pandas
+numpy
+pyarrow
