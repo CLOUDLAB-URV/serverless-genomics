@@ -136,7 +136,7 @@ def generate_faidx_from_s3(pipeline_params: PipelineRun, lithops: Lithops):
         fasta_file_sz = int(fasta_head['content-length'])
         chunk_size = math.ceil(fasta_file_sz / pipeline_params.fasta_chunks)
 
-        map_iterdata = [{'fasta_path': pipeline_params.fasta_path} for _ in range(pipeline_params.fasta_chunks)]
+        map_iterdata = [{'fasta_path': pipeline_params.fasta_path}] * pipeline_params.fasta_chunks
         extra_args = {'chunk_size': chunk_size,
                       'fasta_size': fasta_file_sz,
                       'num_chunks': pipeline_params.fasta_chunks}
@@ -153,6 +153,9 @@ def generate_faidx_from_s3(pipeline_params: PipelineRun, lithops: Lithops):
 
 
 def get_fasta_byte_ranges(pipeline_params: PipelineRun, lithops: Lithops, num_sequences):
+    '''
+    Generate chunks according to the number of fasta chunks requested
+    '''
     fasta_chunks = []
     fasta_file_head = lithops.storage.head_object(pipeline_params.fasta_path.bucket, pipeline_params.fasta_path.key)
     fasta_file_sz = int(fasta_file_head['content-length'])
@@ -181,6 +184,7 @@ def get_fasta_byte_ranges(pipeline_params: PipelineRun, lithops: Lithops, num_se
                 fa_chunk = {'offset_head': int(faidx[i].split(' ')[1]), 'offset_base': min}
         else:
             raise Exception('ERROR: there was a problem getting the first byte of a fasta chunk.')
+        
         # Find last full/half sequence of the chunk
         if i == num_sequences - 1 or max < int(faidx[i + 1].split(' ')[1]):
             fa_chunk['last_byte'] = max - 1 if fa_chunk_size * (j + 2) <= fasta_file_sz else fasta_file_sz - 1
