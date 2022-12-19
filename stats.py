@@ -31,7 +31,7 @@ import time
 import json
 from copy import deepcopy
 
-class Stats():
+class Stats:
     def __init__(self):
         self.__tmp_registrer={}
         self.__stats={}
