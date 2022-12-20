@@ -41,6 +41,7 @@ class PipelineRun:
     lb_method: str = 'select'
     checkpoints: bool = False
     log_level: int = logging.INFO
+    iterdata_n: int = None
 
     # Bucket name with write permissions to store preprocessed, intermediate and output data
     storage_bucket: str = 'serverless-genomics'
