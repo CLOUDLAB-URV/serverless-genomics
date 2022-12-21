@@ -1,5 +1,5 @@
 # Dockerfile used to create the runtime needed to execute the Genomics Pipeline
-# Example command to build: lithops runtime build -b k8s -f Dockerfile user_name/runtime_name:1.0
+# Example command to build: lithops runtime build -b aws_batch -f batch.Dockerfile runtime_name:1
 
 ########################################################
 # PYTHON 3.8
