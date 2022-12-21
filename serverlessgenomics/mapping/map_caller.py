@@ -12,16 +12,15 @@ correction_cachefile = 'lithops_correction_checkpoint'
 map2_cachefile = 'lithops_map2_checkpoint'
 
 
-def generate_gem_indexer_mapper_iterdata(pipeline_params, fasta_chunks, fastq_chunks):
+def generate_gem_indexer_mapper_iterdata(pipeline_params: PipelineRun, fasta_chunks, fastq_chunks):
     iterdata = []
     for fq_i, fq_ch in enumerate(fastq_chunks):
-        for fa_i, fa_ch in enumerate(fasta_chunks):
-            params = {'pipeline_params': pipeline_params,
-                      'fasta_chunk_id': fa_i, 'fasta_chunk': fa_ch,
-                      'fastq_chunk': fq_ch, 'fastq_chunk_id': fq_i}
-            iterdata.append(params)
-    if pipeline_params.iterdata_n is not None:
-        iterdata = iterdata[0:int(pipeline_params.iterdata_n)]
+        if (pipeline_params.fastq_chunk_range is None) or (fq_i in pipeline_params.fastq_chunk_range):
+            for fa_i, fa_ch in enumerate(fasta_chunks):
+                params = {'pipeline_params': pipeline_params,
+                        'fasta_chunk_id': fa_i, 'fasta_chunk': fa_ch,
+                        'fastq_chunk': fq_ch, 'fastq_chunk_id': fq_i}
+                iterdata.append(params)
     return iterdata
 
 

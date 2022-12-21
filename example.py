@@ -10,6 +10,7 @@ if __name__ == '__main__':
         fastq_chunks=20,
         log_level=logging.DEBUG,
         storage_bucket='agabriel-data',
+        #fastq_chunk_range=range(10,13),
         override_id='616d81c4-192c-4775-92f0-41bcf3653d0a'
     )
     # pipeline = VariantCallingPipeline.restore_run('616d81c4-192c-4775-92f0-41bcf3653d0a')

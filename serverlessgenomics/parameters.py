@@ -31,6 +31,8 @@ class PipelineRun:
     run_id: str = str(uuid.uuid4())
     # TODO what is tolerance? (ask Lucio)
     tolerance: int = 0
+    # fastq chunks to be processed
+    fastq_chunk_range: range = None
 
     # Lithops settings
     max_workers: int = 1000
@@ -41,7 +43,6 @@ class PipelineRun:
     lb_method: str = 'select'
     checkpoints: bool = False
     log_level: int = logging.INFO
-    iterdata_n: int = None
 
     # Bucket name with write permissions to store preprocessed, intermediate and output data
     storage_bucket: str = 'serverless-genomics'
