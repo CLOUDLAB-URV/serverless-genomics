@@ -299,7 +299,7 @@ def filter_index_to_mpileup(pipeline_params, fasta_chunk_id, fasta_chunk, fastq_
         # Store output to storage
         mpipleup_key = os.path.join(pipeline_params.tmp_prefix, pipeline_params.run_id, 'mpileups',
                                     f'fq{fastq_chunk_id}', f'fa{fasta_chunk_id}', mpileup_file)
-        storage.upload_file(bucket=pipeline_params.storage_bucket, key=corrected_index_key, file_name=mpipleup_key)
+        storage.upload_file(bucket=pipeline_params.storage_bucket, key=mpipleup_key, file_name=f'{corrected_map_file}.mpileup')
 
         return fastq_chunk_id, fasta_chunk_id, mpipleup_key
     finally:

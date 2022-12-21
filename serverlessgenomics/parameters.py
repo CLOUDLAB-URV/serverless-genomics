@@ -31,6 +31,8 @@ class PipelineRun:
     run_id: str = str(uuid.uuid4())
     # TODO what is tolerance? (ask Lucio)
     tolerance: int = 0
+    # fastq chunks to be processed
+    fastq_chunk_range: range = None
 
     # Lithops settings
     max_workers: int = 1000
