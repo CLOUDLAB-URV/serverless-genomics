@@ -1,4 +1,11 @@
 '''
+TODO
+    1. Crear parametro para decir si se quiere almacenar los stats o no
+    2. Poner timers en las funciones que necesarias
+    3. Recoger tamaños de ficheros que se traspasan
+        - /Index fastq
+        - Index fasta
+        - Fasta
 per exemple, pots tindre una classe Stats, on puguis registrar timers i valors. 
 Durant la funció lambda vas registrant timers (temps d'execució de scripts i les coses de la funcion) 
 i valors (mides de fixters principalment) i despres retornar aquesta classe juntament amb els resultats
@@ -17,16 +24,21 @@ __tmp_registrer
 
 ef my_function():
      __stats = Stats()
-     __stats.timer('script1').start()
+     __stats.perf_counterr('script1').start()
      ...
-     __stats.timer('script1').stop()
+     __stats.perf_counterr('script1').stop()
 
      __stats.value('data_size', 100)
      return ..., __stats
 
 
 TUPLES?
+
+penso que estaria be tindre uns stats per cada stage del pipeline, 
+indicant el temps d'execució de cada script, mida de les dades intermitjes, 
+quan triga en pujar / descarregar de s3... tot aixo
 '''
+import storage
 import time
 import json
 from copy import deepcopy
@@ -41,18 +53,16 @@ class Stats:
             print(f'WARNING: the counter of the timer \"{script}\" was already running, it will restart.')
         elif script in self.__stats and "execution_time" in self.__stats[script]:
             raise Exception(f'The timer of \"{script}\" already existed, choose another name or remove the existing timer first.')
-        else:
-            self.__tmp_registrer[script] = {} 
-
-        self.__tmp_registrer[script]["start_time"] = time.time()
+ 
+        self.__tmp_registrer[script] = time.perf_counter()
     
     def timer_stop(self, script):
-        end_time = time.time()
+        end_time = time.perf_counter()
         
-        if script in self.__tmp_registrer and "start_time" in self.__tmp_registrer[script]:
+        if script in self.__tmp_registrer:
             if script not in self.__stats:
                 self.__stats[script] = {} 
-            self.__stats[script]["execution_time"] = end_time - self.__tmp_registrer[script]["start_time"]
+            self.__stats[script]["execution_time"] = end_time - self.__tmp_registrer[script]
             del self.__tmp_registrer[script]
         else:
             raise Exception(f'You can not execute this function before "timer_start".')
@@ -66,6 +76,23 @@ class Stats:
             if script not in self.__stats:
                 self.__stats[script] = {} 
             self.__stats[script][name_data] = size
+    
+    def store_dictio(self, dictio, name_dictio=None):
+        if not isinstance(dictio, dict): 
+            raise Exception(f'The second parameter must be a dictionary.')
+
+        if name_dictio is not None:
+            if name_dictio in self.__stats:
+                raise Exception(f'The key \"{name_data}\" contains data, choose another name or remove the key first.')
+            else:
+               self.__stats[name_dictio] = dictio
+        elif not any(key in self.__stats for key in dictio):
+            self.__stats.update(dictio)
+
+        
+
+
+            
     
     def delete_stat(self, stat):
         if stat in self.__stats:
@@ -85,10 +112,5 @@ class Stats:
             raise Exception(f'The key \"{stats}\" not exist.')
         return dictio
 
-    def load_stats_to_json(self, name_file="logs_stats"):
-        with open(f'{name_file}.txt', 'w') as json_file:
-            json.dump(self.__stats, json_file)
-
-
-
-    
+    def load_stats_to_json(self, bucket, name_file=):
+        put_object(bucket=bucket, key=f'stats/{name_file}.json', body=str(delf.__stats))    

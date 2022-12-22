@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+fromm ..stats import Stats
+
 import io
 import logging
 import re
@@ -36,8 +38,13 @@ def generate_idx_from_gzip(pipeline_params: PipelineRun, gzip_file_path: S3Path,
     tmp_index_file_name = tempfile.mktemp()
     s3 = storage.get_client()
 
+    stats = Stats()
     try:
+        stats.timer_start('get_fastq_file')
         res = s3.get_object(Bucket=gzip_file_path.bucket, Key=gzip_file_path.key)
+        stats.timer_stop('get_fastq_file')
+        stats.store_size_data('size', s3.head_object(Bucket=gzip_file_path.bucket, Key=gzip_file_path.key)['content-length'], 'fastq_file')
+        
         data_stream = res['Body']
         force_delete_local_path(tmp_index_file_name)
         t0 = time.perf_counter()
@@ -68,7 +75,10 @@ def generate_idx_from_gzip(pipeline_params: PipelineRun, gzip_file_path: S3Path,
 
         # Store index binary file
         index_key, tab_key = pipeline_params.fastqgz_idx_keys
+        stats.timer_start('upload_index_binary_fastq')
         s3.upload_file(Filename=tmp_index_file_name, Bucket=pipeline_params.storage_bucket, Key=index_key)
+        stats.timer_stop('upload_index_binary_fastq')
+        stats.store_size_data('size', s3.head_object(Bucket=pipeline_params.storage_bucket, Key=index_key)['content-length'], 'index_binary_fastq')
 
         # Get the total number of lines
         total_lines: int = int(RE_NUMS.findall(RE_NLINES.findall(output).pop()).pop())
@@ -94,17 +104,24 @@ def generate_idx_from_gzip(pipeline_params: PipelineRun, gzip_file_path: S3Path,
         out_stream = io.BytesIO()
         df.to_parquet(out_stream, engine='pyarrow')
         out_stream.seek(0)
-
+        stats.timer_start('put_data_frame_parquet')
         s3.put_object(Bucket=pipeline_params.storage_bucket, Key=tab_key, Body=out_stream,
-                      Metadata={'total_lines': str(total_lines)})
-        return total_lines
+                      Metadata={'total_lines': str(total_lines)})                      
+        stats.timer_stop('put_data_frame_parquet')
+        stats.store_size_data('size', s3.head_object(Bucket=pipeline_params.storage_bucket, Key=tab_key)['content-length'], 'put_data_frame_parquet')
+        
+        return total_lines, stat.get_stats()
     finally:
         force_delete_local_path(tmp_index_file_name)
 
 
-def get_ranges_from_line_pairs(pipeline_params: PipelineRun, lithops: Lithops, pairs: List[Tuple[int, int]]):
+def get_ranges_from_line_pairs(pipeline_params: PipelineRun, lithops: Lithops, pairs: List[Tuple[int, int]], stats):
     _, tab_key = pipeline_params.fastqgz_idx_keys
-    meta_obj_body = lithops.storage.get_object(bucket=pipeline_params.storage_bucket, key=tab_key)
+    stats.timer_start('get_data_frame_parquet')
+    meta_obj_body = lithops.storage.get_object(bucket=pipeline_params.storage_bucket, key=tab_key)                       
+    stats.timer_stop('get_data_frame_parquet')
+    stats.store_size_data('size', lithops.storage.head_object(Bucket=pipeline_params.storage_bucket, Key=tab_key)['content-length'], 'get_data_frame_parquet')
+        
     meta_buff = io.BytesIO(meta_obj_body)
     meta_buff.seek(0)
     df = pd.read_parquet(meta_buff)
@@ -158,25 +175,31 @@ def generate_fastqgz_index_from_s3(pipeline_params: PipelineRun, lithops: Lithop
                                      pipeline_params.fastq_path.bucket, index_key)
     fastq_tab_head = try_head_object(lithops.storage,
                                      pipeline_params.fastq_path.bucket, tab_key)
+    dictio = {}
     if fastq_idx_head is None or fastq_tab_head is None:
         # Generate gzip index file for compressed fastq input
         logger.info('Generating gzip index file for FASTQ %s', pipeline_params.fastq_path.stem)
-        total_lines = lithops.invoker.call(generate_idx_from_gzip, (pipeline_params, pipeline_params.fastq_path))
+        res = lithops.invoker.call(generate_idx_from_gzip, (pipeline_params, pipeline_params.fastq_path))
+        total_lines = res[0]
+        dictio = res[1]
     else:
         # Get total lines from header metadata
         logger.debug('Fastqz index for %s found', pipeline_params.fastq_path.stem)
         total_lines = int(fastq_tab_head['x-amz-meta-total_lines'])
     logger.info('Read %d sequences from FASTQ %s', total_lines / 4, pipeline_params.fastq_path.stem)
 
-    return total_lines
+    return total_lines, dictio
 
 
-def prepare_fastq_chunks(pipeline_params: PipelineRun, lithops: Lithops):
+def prepare_fastq_chunks(pipeline_params: PipelineRun, lithops: Lithops, stats):
     """
     Calculate fastq byte ranges for chunks of a pipeline run, generate gzip index if needed
     """
+    stats.timer_start('prepare_fastq_chunks')    
     if pipeline_params.fastq_path is not None:
-        num_lines = generate_fastqgz_index_from_s3(pipeline_params, lithops)
+        res = generate_fastqgz_index_from_s3(pipeline_params, lithops)
+        num_lines = res[0]
+        stats.store_dictio('generating_index_fastq_from_s3', res[1])
     elif pipeline_params.fastq_sra is not None:
         # TODO implement get fastq file from sra archive
         raise NotImplementedError()
@@ -199,9 +222,10 @@ def prepare_fastq_chunks(pipeline_params: PipelineRun, lithops: Lithops):
 
     # Get byte ranges from line pairs using GZip index
     # TODO maybe call this function using lithops? currenty it needs to download the tab file to local process, compare if it is faster invoking remote lambda
-    byte_ranges = get_ranges_from_line_pairs(pipeline_params, lithops, line_pairs)
+    byte_ranges = get_ranges_from_line_pairs(pipeline_params, lithops, line_pairs, stats)
     chunks = [{'chunk_id': i, 'line_0': line_0, 'line_1': line_1, 'range_0': range_0, 'range_1': range_1}
               for i, ((line_0, line_1), (range_0, range_1)) in enumerate(zip(line_pairs, byte_ranges))]
+    stats.timer_stop('prepare_fastq_chunks')   
     return chunks
 
 # TODO implement get fastq from sra archive

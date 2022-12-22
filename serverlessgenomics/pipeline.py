@@ -11,6 +11,7 @@ from .preprocessing.preprocess_fastq import prepare_fastq_chunks
 from .cachedlithops import CachedLithopsInvoker
 
 from .parameters import PipelineRun, Lithops, validate_parameters
+from .stats import Stats
 from .constants import CACHE_PATH
 from .utils import setup_logging, log_parameters
 
@@ -49,21 +50,21 @@ class VariantCallingPipeline:
         self._setup()
         return self
 
-    def preprocess(self):
+    def preprocess(self, stats):
         """
         Prepare requested input data for alignment
         """
-        self.fastq_chunks = prepare_fastq_chunks(self.parameters, self.lithops)
+        self.fastq_chunks = prepare_fastq_chunks(self.parameters, self.lithops, stats)
         # fetch_fastq_chunk(self.fastq_chunks[0], 'test.fastq', self.lithops.storage, self.parameters.fastq_path, self.parameters.storage_bucket, self.parameters.fastqgz_idx_keys[0])
-        self.fasta_chunks = prepare_fasta_chunks(self.parameters, self.lithops)
+        self.fasta_chunks = prepare_fasta_chunks(self.parameters, self.lithops, stats)
         # fetch_fasta_chunk(self.fasta_chunks[0], 'test', self.lithops.storage, self.parameters.fasta_path)
 
-    def align_reads(self):
+    def align_reads(self, stats):
         """
         Alignment map pipeline step
         """
         assert self.fasta_chunks is not None and self.fastq_chunks is not None, 'generate chunks first!'
-        run_full_alignment(self.parameters, self.lithops, self.fasta_chunks, self.fastq_chunks)
+        run_full_alignment(self.parameters, self.lithops, self.fasta_chunks, self.fastq_chunks, stats)
 
     # TODO implement reduce stage
     def reduce(self):
@@ -73,8 +74,17 @@ class VariantCallingPipeline:
         """
         Execute all pipeline steps in order
         """
-        self.preprocess()
-        self.align_reads()
+        stats = Stats()
+        stats.timer_start('preprocess')
+        stats = self.preprocess(stats)
+        stats.timer_stop('preprocess')
+        stats.timer_start('align_reads')
+        self.align_reads(stats)
+        stats.timer_stop('align_reads')
+
+        if self.parameters.log_stats:
+            stats.load_stats_to_json(self.parameters.storage_bucket,self.parameters.logs_stats_name)
+
 
     def clean_all(self):
         keys = self.lithops.storage.list_keys(self.parameters.storage_bucket, prefix=self.parameters.fastqgz_idx_prefix)
