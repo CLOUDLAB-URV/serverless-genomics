@@ -5,6 +5,8 @@ import logging
 from .alignment_mapper import gem_indexer_mapper, index_correction, filter_index_to_mpileup
 from ..parameters import PipelineRun, Lithops
 
+from ..stats import Stats
+
 logger = logging.getLogger(__name__)
 
 map1_cachefile = 'lithops_map1_checkpoint'
@@ -56,7 +58,7 @@ def generate_index_to_mpileup_iterdata(pipeline_params, fasta_chunks, fastq_chun
     return iterdata
 
 
-def run_full_alignment(pipeline_params: PipelineRun, lithops: Lithops, fasta_chunks, fastq_chunks, stats):
+def run_full_alignment(pipeline_params: PipelineRun, lithops: Lithops, fasta_chunks, fastq_chunks):
     """
     Execute the map phase
 
@@ -71,25 +73,27 @@ def run_full_alignment(pipeline_params: PipelineRun, lithops: Lithops, fasta_chu
     """
     # MAP: Stage 1
     # TODO guardar tamaño de datos con los que se juega
+    
+    subStat = Stats()
     logger.debug("PROCESSING MAP: STAGE 1")    
-    stats.timer_start('gem_indexer_mapper')   
+    subStat.timer_start('gem_indexer_mapper')   
     iterdata = generate_gem_indexer_mapper_iterdata(pipeline_params, fasta_chunks, fastq_chunks)
     gem_indexer_mapper_result = lithops.invoker.map(gem_indexer_mapper, iterdata)  
-    stats.timer_stop('gem_indexer_mapper') 
+    subStat.timer_stop('gem_indexer_mapper') 
 
     # MAP: Index correction
     logger.debug("PROCESSING INDEX CORRECTION") 
-    stats.timer_start('index_correction')  
+    subStat.timer_start('index_correction')  
     iterdata = generate_index_correction_iterdata(pipeline_params, gem_indexer_mapper_result)
     index_correction_result = lithops.invoker.map(index_correction, iterdata)
-    stats.timer_stop('index_correction')  
+    subStat.timer_stop('index_correction')  
 
     # Map: Stage 2
     logger.debug("PROCESSING MAP: STAGE 2") 
-    stats.timer_start('filter_index_to_mpileup')  
+    subStat.timer_start('filter_index_to_mpileup')  
     iterdata = generate_index_to_mpileup_iterdata(pipeline_params, fasta_chunks, fastq_chunks,
                                                   gem_indexer_mapper_result, index_correction_result)
     alignment_output = lithops.invoker.map(filter_index_to_mpileup, iterdata)
-    stats.timer_stop('filter_index_to_mpileup')  
+    subStat.timer_stop('filter_index_to_mpileup')  
 
-    return alignment_output
+    return alignment_output, subStat

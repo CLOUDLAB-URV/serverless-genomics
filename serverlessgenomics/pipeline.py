@@ -50,21 +50,33 @@ class VariantCallingPipeline:
         self._setup()
         return self
 
-    def preprocess(self, stats):
+    def preprocess(self):
         """
         Prepare requested input data for alignment
         """
-        self.fastq_chunks = prepare_fastq_chunks(self.parameters, self.lithops, stats)
+        preprocessStat = Stats()
+        preprocessStat.timer_start('preprocess')
+        self.fastq_chunks, subStatFastq = prepare_fastq_chunks(self.parameters, self.lithops)
         # fetch_fastq_chunk(self.fastq_chunks[0], 'test.fastq', self.lithops.storage, self.parameters.fastq_path, self.parameters.storage_bucket, self.parameters.fastqgz_idx_keys[0])
-        self.fasta_chunks = prepare_fasta_chunks(self.parameters, self.lithops, stats)
+        self.fasta_chunks, subStatFasta = prepare_fasta_chunks(self.parameters, self.lithops)
         # fetch_fasta_chunk(self.fasta_chunks[0], 'test', self.lithops.storage, self.parameters.fasta_path)
+        preprocessStat.timer_stop('preprocess')
+        preprocessStat.store_dictio(subStatFastq.get_stats(), "subprocesses_fastq", "preprocess")
+        preprocessStat.store_dictio(subStatFasta.get_stats(), "subprocesses_fasta", "preprocess")
+        return preprocessStat
+        
 
-    def align_reads(self, stats):
+    def align_reads(self):
         """
         Alignment map pipeline step
         """
-        assert self.fasta_chunks is not None and self.fastq_chunks is not None, 'generate chunks first!'
-        run_full_alignment(self.parameters, self.lithops, self.fasta_chunks, self.fastq_chunks, stats)
+        assert self.fasta_chunks is not None and self.fastq_chunks is not None, 'generate chunks first!'        
+        alignReadsStat = Stats()
+        alignReadsStat.timer_start('align_reads')
+        _, subStat = run_full_alignment(self.parameters, self.lithops, self.fasta_chunks, self.fastq_chunks)
+        alignReadsStat.timer_stop('align_reads')
+        alignReadsStat.store_dictio(subStat.get_stats(), "subprocesses", "align_reads")
+        return alignReadsStat
 
     # TODO implement reduce stage
     def reduce(self):
@@ -75,15 +87,15 @@ class VariantCallingPipeline:
         Execute all pipeline steps in order
         """
         stats = Stats()
-        stats.timer_start('preprocess')
-        stats = self.preprocess(stats)
-        stats.timer_stop('preprocess')
-        stats.timer_start('align_reads')
-        self.align_reads(stats)
-        stats.timer_stop('align_reads')
+        stats.timer_start('pipeline')
+        preprocessStat = self.preprocess()
+        alignReadsStat = self.align_reads()
+        stats.timer_stop('pipeline')
+        stats.store_dictio(preprocessStat.get_stats(), "preprocess_phase", "pipeline")
+        stats.store_dictio(alignReadsStat.get_stats(), "alignReads_phase", "pipeline")
 
         if self.parameters.log_stats:
-            stats.load_stats_to_json(self.parameters.storage_bucket,self.parameters.logs_stats_name)
+            stats.load_stats_to_json(self.parameters.storage_bucket, self.parameters.log_stats_name)
 
 
     def clean_all(self):

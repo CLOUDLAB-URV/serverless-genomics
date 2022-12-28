@@ -8,6 +8,7 @@ import itertools
 from typing import TYPE_CHECKING
 from functools import reduce
 
+from ..stats import Stats
 from ..utils import try_head_object
 import bz2
 
@@ -149,8 +150,8 @@ def generate_faidx_from_s3(pipeline_params: PipelineRun, lithops: Lithops, stats
         
         logger.info('Generated faidx for FASTA %s (read %d sequences)', pipeline_params.fasta_path.stem, num_sequences)
 
-    stats.store_size_data('sizefasta_file', lithops.storage.head_object(Bucket=pipeline_params.fasta_path.bucket, Key=pipeline_params.fasta_path.key)['content-length'])
-    stats.store_size_data('size_index_file', lithops.storage.head_object(Bucket=pipeline_params.storage_bucket, Key=pipeline_params.faidx_key)['content-length'])
+    stats.store_size_data('size_fasta_file', lithops.storage.head_object(bucket=pipeline_params.fasta_path.bucket, key=pipeline_params.fasta_path.key)['content-length'])
+    stats.store_size_data('size_index_file', lithops.storage.head_object(bucket=pipeline_params.storage_bucket, key=pipeline_params.faidx_key)['content-length'])
     logger.info('Read %d sequences from FASTA %s', num_sequences, pipeline_params.fasta_path.stem)
     return num_sequences
 
@@ -211,13 +212,15 @@ def get_fasta_byte_ranges(pipeline_params: PipelineRun, lithops: Lithops, num_se
     return fasta_chunks
 
 
-def prepare_fasta_chunks(pipeline_params: PipelineRun, lithops: Lithops, stats):
+def prepare_fasta_chunks(pipeline_params: PipelineRun, lithops: Lithops):
     """
     Calculate fasta byte ranges and metadata for chunks of a pipeline run, generate faidx index if needed
     """
+    subStat = Stats()
     # Get number of sequences from fasta file, generate faidx file if needed
-    stats.timer_start('prepare_fasta_chunks')   
-    num_sequences = generate_faidx_from_s3(pipeline_params, lithops, stats)
+    subStat.timer_start('prepare_fasta_chunks')   
+    num_sequences = generate_faidx_from_s3(pipeline_params, lithops, subStat)
     fasta_chunks = get_fasta_byte_ranges(pipeline_params, lithops, num_sequences)   
-    stats.timer_stop('prepare_fasta_chunks')
-    return fasta_chunks
+    subStat.timer_stop('prepare_fasta_chunks')
+    
+    return fasta_chunks, subStat
