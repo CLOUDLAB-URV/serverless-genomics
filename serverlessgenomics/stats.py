@@ -8,13 +8,13 @@ class Stats:
         self.__tmp_registrer={}
         self.__stats={}
 
-    def timer_start(self, script):
+    def timer_start(self, script, extra_time=None):
         if script in self.__tmp_registrer:
             print(f'WARNING: the counter of the timer \"{script}\" was already running, it will restart.')
         elif script in self.__stats and "execution_time" in self.__stats[script]:
             raise Exception(f'The timer of \"{script}\" already existed, choose another name or remove the existing timer first.')
  
-        self.__tmp_registrer[script] = time.perf_counter()
+        self.__tmp_registrer[script] = time.perf_counter() if extra_time is None else extra_time + time.perf_counter()
     
     def timer_stop(self, script):
         end_time = time.perf_counter()
@@ -41,8 +41,8 @@ class Stats:
             dictionary[name_data] = size
     
     def store_dictio(self, dictio, name_dictio=None, script=None):
-        if not isinstance(dictio, dict): 
-            raise Exception(f'The first parameter must be a dictionary.')
+        if isinstance(dictio, dict) and name_dictio is None: 
+            raise Exception(f'The first parameter is not a dictionary, you must write a name for it (second parameter).')
         if dictio is not None and dictio: # Store if it is not None or empty
             if script is None: 
 
