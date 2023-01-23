@@ -6,6 +6,7 @@ import lithops
 from .mapping.map_caller import run_full_alignment
 from .preprocessing.preprocess_fasta import prepare_fasta_chunks
 from .preprocessing.preprocess_fastq import prepare_fastq_chunks
+from .reducer.reduce_caller import run_reducer
 
 # map/reduce functions and executor
 from .cachedlithops import CachedLithopsInvoker
@@ -63,18 +64,20 @@ class VariantCallingPipeline:
         Alignment map pipeline step
         """
         assert self.fasta_chunks is not None and self.fastq_chunks is not None, 'generate chunks first!'
-        run_full_alignment(self.parameters, self.lithops, self.fasta_chunks, self.fastq_chunks)
+        return run_full_alignment(self.parameters, self.lithops, self.fasta_chunks, self.fastq_chunks)
 
     # TODO implement reduce stage
-    def reduce(self):
-        raise NotImplementedError()
+    def reduce(self, mapper_output):
+        run_reducer(self.parameters, self.lithops, mapper_output)
 
     def run_pipeline(self):
         """
         Execute all pipeline steps in order
         """
         self.preprocess()
-        self.align_reads()
+        mapper_output = self.align_reads()
+        self.reduce(mapper_output)
+        #self.clean_all()
 
     def clean_all(self):
         keys = self.lithops.storage.list_keys(self.parameters.storage_bucket, prefix=self.parameters.fastqgz_idx_prefix)
