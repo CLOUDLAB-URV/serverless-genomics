@@ -8,6 +8,7 @@ import itertools
 from typing import TYPE_CHECKING
 from functools import reduce
 
+from ..stats import Stats
 from ..utils import try_head_object
 import bz2
 
@@ -120,7 +121,7 @@ def rename_sequence(sequence, param, name_id, offset_head, offset_base):
     return sequence
 
 
-def generate_faidx_from_s3(pipeline_params: PipelineRun, lithops: Lithops):
+def generate_faidx_from_s3(pipeline_params: PipelineRun, lithops: Lithops, stats):
     fasta_head = try_head_object(lithops.storage, pipeline_params.fasta_path.bucket, pipeline_params.fasta_path.key)
     if fasta_head is None:
         raise Exception(f'fasta file with key {pipeline_params.fastq_path} does not exists')
@@ -129,14 +130,14 @@ def generate_faidx_from_s3(pipeline_params: PipelineRun, lithops: Lithops):
     if faidx_head is not None:
         logger.debug('Faidx for %s found', pipeline_params.fasta_path.stem)
         num_sequences = int(faidx_head['x-amz-meta-num_sequences'])
-    else:
-        logger.info('Faidx for %s not found, generating fasta index file', pipeline_params.fasta_path.stem)
-
+    else:               
+        logger.info('Faidx for %s not found, generating fasta index file', pipeline_params.fasta_path.stem)        
+        stats.timer_start('generate_fasta_index')                    
         fasta_head = lithops.storage.head_object(pipeline_params.fasta_path.bucket, pipeline_params.fasta_path.key)
         fasta_file_sz = int(fasta_head['content-length'])
         chunk_size = math.ceil(fasta_file_sz / pipeline_params.fasta_chunks)
 
-        map_iterdata = [{'fasta_path': pipeline_params.fasta_path} for _ in range(pipeline_params.fasta_chunks)]
+        map_iterdata = [{'fasta_path': pipeline_params.fasta_path}] * pipeline_params.fasta_chunks
         extra_args = {'chunk_size': chunk_size,
                       'fasta_size': fasta_file_sz,
                       'num_chunks': pipeline_params.fasta_chunks}
@@ -144,15 +145,21 @@ def generate_faidx_from_s3(pipeline_params: PipelineRun, lithops: Lithops):
         num_sequences = lithops.invoker.map_reduce(map_function=create_index_chunked,
                                                    map_iterdata=map_iterdata,
                                                    extra_args=extra_args, extra_env=extra_env,
-                                                   reduce_function=reduce_chunked_indexes)
-
+                                                   reduce_function=reduce_chunked_indexes) 
+        stats.timer_stop('generate_fasta_index')                     
+        
         logger.info('Generated faidx for FASTA %s (read %d sequences)', pipeline_params.fasta_path.stem, num_sequences)
 
+    stats.store_size_data('size_fasta_file', lithops.storage.head_object(bucket=pipeline_params.fasta_path.bucket, key=pipeline_params.fasta_path.key)['content-length'])
+    stats.store_size_data('size_index_file', lithops.storage.head_object(bucket=pipeline_params.storage_bucket, key=pipeline_params.faidx_key)['content-length'])
     logger.info('Read %d sequences from FASTA %s', num_sequences, pipeline_params.fasta_path.stem)
     return num_sequences
 
 
 def get_fasta_byte_ranges(pipeline_params: PipelineRun, lithops: Lithops, num_sequences):
+    '''
+    Generate chunks according to the number of fasta chunks requested
+    '''                 
     fasta_chunks = []
     fasta_file_head = lithops.storage.head_object(pipeline_params.fasta_path.bucket, pipeline_params.fasta_path.key)
     fasta_file_sz = int(fasta_file_head['content-length'])
@@ -181,6 +188,7 @@ def get_fasta_byte_ranges(pipeline_params: PipelineRun, lithops: Lithops, num_se
                 fa_chunk = {'offset_head': int(faidx[i].split(' ')[1]), 'offset_base': min}
         else:
             raise Exception('ERROR: there was a problem getting the first byte of a fasta chunk.')
+        
         # Find last full/half sequence of the chunk
         if i == num_sequences - 1 or max < int(faidx[i + 1].split(' ')[1]):
             fa_chunk['last_byte'] = max - 1 if fa_chunk_size * (j + 2) <= fasta_file_sz else fasta_file_sz - 1
@@ -201,7 +209,6 @@ def get_fasta_byte_ranges(pipeline_params: PipelineRun, lithops: Lithops, num_se
         j += 1
         min = fa_chunk_size * j
         max = fa_chunk_size * (j + 1)
-
     return fasta_chunks
 
 
@@ -209,7 +216,11 @@ def prepare_fasta_chunks(pipeline_params: PipelineRun, lithops: Lithops):
     """
     Calculate fasta byte ranges and metadata for chunks of a pipeline run, generate faidx index if needed
     """
+    subStat = Stats()
     # Get number of sequences from fasta file, generate faidx file if needed
-    num_sequences = generate_faidx_from_s3(pipeline_params, lithops)
-    fasta_chunks = get_fasta_byte_ranges(pipeline_params, lithops, num_sequences)
-    return fasta_chunks
+    subStat.timer_start('prepare_fasta_chunks')   
+    num_sequences = generate_faidx_from_s3(pipeline_params, lithops, subStat)
+    fasta_chunks = get_fasta_byte_ranges(pipeline_params, lithops, num_sequences)   
+    subStat.timer_stop('prepare_fasta_chunks')
+    
+    return fasta_chunks, subStat
