@@ -6,6 +6,7 @@ import lithops
 from .mapping.map_caller import run_full_alignment
 from .preprocessing.preprocess_fasta import prepare_fasta_chunks
 from .preprocessing.preprocess_fastq import prepare_fastq_chunks
+from .reducer.reduce_caller import run_reducer
 
 # map/reduce functions and executor
 from .cachedlithops import CachedLithopsInvoker
@@ -73,14 +74,14 @@ class VariantCallingPipeline:
         assert self.fasta_chunks is not None and self.fastq_chunks is not None, 'generate chunks first!'        
         alignReadsStat = Stats()
         alignReadsStat.timer_start('align_reads')
-        _, subStat = run_full_alignment(self.parameters, self.lithops, self.fasta_chunks, self.fastq_chunks)
+        mapper_output, subStat = run_full_alignment(self.parameters, self.lithops, self.fasta_chunks, self.fastq_chunks)
         alignReadsStat.timer_stop('align_reads')
         alignReadsStat.store_dictio(subStat.get_stats(), "subprocesses", "align_reads")
-        return alignReadsStat
+        return mapper_output, alignReadsStat
 
     # TODO implement reduce stage
-    def reduce(self):
-        raise NotImplementedError()
+    def reduce(self, mapper_output):
+        run_reducer(self.parameters, self.lithops, mapper_output)
 
     def run_pipeline(self):
         """
@@ -89,14 +90,15 @@ class VariantCallingPipeline:
         stats = Stats()
         stats.timer_start('pipeline')
         preprocessStat = self.preprocess()
-        alignReadsStat = self.align_reads()
+        mapper_output, alignReadsStat = self.align_reads()
         stats.timer_stop('pipeline')
         stats.store_dictio(preprocessStat.get_stats(), "preprocess_phase", "pipeline")
         stats.store_dictio(alignReadsStat.get_stats(), "alignReads_phase", "pipeline")
+        
+        self.reduce(mapper_output)
 
         if self.parameters.log_stats:
             stats.load_stats_to_json(self.parameters.storage_bucket, self.parameters.log_stats_name)
-
 
     def clean_all(self):
         keys = self.lithops.storage.list_keys(self.parameters.storage_bucket, prefix=self.parameters.fastqgz_idx_prefix)

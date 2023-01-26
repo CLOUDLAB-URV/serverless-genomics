@@ -258,7 +258,7 @@ def filter_index_to_mpileup(pipeline_params, fasta_chunk_id, fasta_chunk, fastq_
         storage.head_object(bucket=pipeline_params.storage_bucket, key=mpipleup_key)
         # If they exist, return the keys and skip computing this chunk
         stat.timer_stop(f'{base_name}_fa{fasta_chunk_id}-fq{fastq_chunk_id}')
-        return (fastq_chunk_id, mpipleup_key), stat.get_stats()
+        return (mpipleup_key), stat.get_stats()
     except StorageNoSuchKeyError:
         # If the output is missing, proceed
         pass
@@ -313,9 +313,9 @@ def filter_index_to_mpileup(pipeline_params, fasta_chunk_id, fasta_chunk, fastq_
         mpipleup_key = os.path.join(pipeline_params.tmp_prefix, pipeline_params.run_id, 'mpileups',
                                     f'fq{fastq_chunk_id}', f'fa{fasta_chunk_id}', mpileup_file)
         storage.upload_file(bucket=pipeline_params.storage_bucket, key=mpipleup_key, file_name=f'{corrected_map_file}.mpileup')
-        
+
         stat.timer_stop(f'{base_name}_fa{fasta_chunk_id}-fq{fastq_chunk_id}')
-        return (fastq_chunk_id, fasta_chunk_id, mpipleup_key), stat.get_stats()
+        return mpipleup_key, stat.get_stats()
     finally:
         os.chdir(pwd)
         force_delete_local_path(temp_dir)
