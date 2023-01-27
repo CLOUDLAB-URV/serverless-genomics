@@ -111,7 +111,7 @@ def distribute_indexes(pipeline_params: PipelineRun, keys: Tuple[str], storage: 
                 count_indexes[index] = 1
 
     # Now we distribute the indexes depending on the max number of indexes we want each reducer to process
-    MAX_INDEXES = 20000000
+    MAX_INDEXES = 20_000_000
     workers_data = []
     indexes = 0
     
