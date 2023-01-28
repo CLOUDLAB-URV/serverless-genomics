@@ -111,7 +111,7 @@ def distribute_indexes(pipeline_params: PipelineRun, keys: Tuple[str], storage: 
                 count_indexes[index] = 1
 
     # Now we distribute the indexes depending on the max number of indexes we want each reducer to process
-    MAX_INDEXES = 20000000
+    MAX_INDEXES = 20_000_000
     workers_data = []
     indexes = 0
     
@@ -283,7 +283,7 @@ def run_reducer(pipeline_params: PipelineRun, lithops: Lithops, mapper_output):
     
     # 5 Launch the reducers
     reducer_iterdata = create_iterdata_reducer(intermediate_keys, distributed_indexes, multipart_ids, multipart_keys, pipeline_params)
-    reducer_output = lithops.invoker.map(reduce_function, reducer_iterdata).get_result()
+    reducer_output = lithops.invoker.map(reduce_function, reducer_iterdata)
     
     # 6 Complete the multipart uploads that the reducers created
     complete_multipart(multipart_keys, multipart_ids, reducer_output, pipeline_params, lithops.storage.storage_handler.s3_client)
@@ -307,7 +307,7 @@ def run_reducer(pipeline_params: PipelineRun, lithops: Lithops, mapper_output):
         merge_iterdata.append(data)
         part += 1
     
-    final_merge_results = lithops.invoker.map(final_merge, merge_iterdata).get_result()
+    final_merge_results = lithops.invoker.map(final_merge, merge_iterdata)
     
     # 8 Complete the previous multipart upload
     finish(final_sinple_key, final_id, final_merge_results, pipeline_params, lithops.storage.storage_handler.s3_client)
