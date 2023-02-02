@@ -21,7 +21,8 @@ logger = logging.getLogger(__name__)
 
 class VariantCallingPipeline:
     def __init__(self, override_id=None, **params):
-        params['override_id'] = override_id
+        if override_id is not None:
+            params['override_id'] = override_id
         self.parameters: PipelineRun = validate_parameters(params)
         self.fastq_chunks = None
         self.fasta_chunks = None
