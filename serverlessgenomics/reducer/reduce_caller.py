@@ -5,6 +5,7 @@ import lithops as deflithops
 from ..parameters import PipelineRun, Lithops
 
 from ..stats import Stats
+from ..utils import split_data_result
 from .reduce_functions import complete_multipart, create_multipart, create_multipart_keys, distribute_indexes, final_merge, finish, keys_by_fasta_split, reduce_function
 
 logger = logging.getLogger(__name__)
@@ -47,7 +48,7 @@ def create_iterdata_reducer(intermediate_keys: dict, distributed_indexes: Tuple[
 
     return iterdata
 
-def run_reducer(pipeline_params: PipelineRun, lithops, mapper_output):
+def run_reducer(pipeline_params: PipelineRun, lithops: Lithops, mapper_output):
     subStat = Stats()
     logger.debug("START OF REDUCE STAGE")
     
