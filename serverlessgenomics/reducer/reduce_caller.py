@@ -4,6 +4,7 @@ import lithops as deflithops
 
 from ..parameters import PipelineRun, Lithops
 
+from ..stats import Stats
 from .reduce_functions import complete_multipart, create_multipart, create_multipart_keys, distribute_indexes, final_merge, finish, keys_by_fasta_split, reduce_function
 
 logger = logging.getLogger(__name__)
