@@ -111,10 +111,7 @@ def distribute_indexes(pipeline_params: PipelineRun, keys: Tuple[str], storage: 
         int_indexes = list(map(int, data))
 
         for index in int_indexes:
-            if index in count_indexes:
-                count_indexes[index] += 1
-            else:
-                count_indexes[index] = 1
+            count_indexes[index] = count_indexes.get(index, 0) + 1
         subStat.timer_stop(key)
     stat.timer_stop(expression)
     stat.store_dictio(subStat.get_stats(), "subprocesses", expression)
@@ -126,13 +123,12 @@ def distribute_indexes(pipeline_params: PipelineRun, keys: Tuple[str], storage: 
     
     for key in count_indexes:
         if indexes + count_indexes[key] < MAX_INDEXES:
-            indexes = indexes + count_indexes[key]
+            indexes += count_indexes[key]
             index = key
         else: # append the last index below max_index as end value in range, and start a new range.
             indexes = 0
             workers_data.append(index)
-    last = list(count_indexes)[-1]
-    workers_data.append(last)
+    workers_data.append(key)
     
     mainStat.timer_stop("call_distributeIndexes")
     mainStat.store_dictio(stat.get_stats(), "subprocesses", "call_distributeIndexes")
