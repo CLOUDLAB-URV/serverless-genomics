@@ -256,6 +256,7 @@ def filter_index_to_mpileup(pipeline_params: PipelineRun, fasta_chunk_id: int, f
         # If they exist, return the keys and skip computing this chunk
         stat.timer_stop(f'{pipeline_params.base_name}_fa{fasta_chunk_id}-fq{fastq_chunk_id}')
         return mpipleup_key, stat.get_stats()
+
     except StorageNoSuchKeyError:
         # If the output is missing, proceed
         pass
@@ -316,6 +317,7 @@ def filter_index_to_mpileup(pipeline_params: PipelineRun, fasta_chunk_id: int, f
 
         stat.timer_stop(f'{pipeline_params.base_name}_fa{fasta_chunk_id}-fq{fastq_chunk_id}')
         return mpipleup_key, stat.get_stats()
+
     finally:
         os.chdir(pwd)
         force_delete_local_path(temp_dir)

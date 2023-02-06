@@ -4,16 +4,10 @@ import logging
 
 from .alignment_mapper import gem_indexer_mapper, index_correction, filter_index_to_mpileup
 from ..parameters import PipelineRun, Lithops
-
 from ..stats import Stats
 from ..utils import split_data_result
 
 logger = logging.getLogger(__name__)
-
-map1_cachefile = 'lithops_map1_checkpoint'
-correction_cachefile = 'lithops_correction_checkpoint'
-map2_cachefile = 'lithops_map2_checkpoint'
-
 
 def generate_gem_indexer_mapper_iterdata(pipeline_params: PipelineRun, fasta_chunks, fastq_chunks):
     iterdata = []
