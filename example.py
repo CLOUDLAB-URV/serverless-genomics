@@ -9,6 +9,7 @@ if __name__ == '__main__':
         fastq_path='s3://agabriel-data/fastq/SRR935389.fastq.gz',
         fastq_chunks=20,
         log_level=logging.DEBUG,
-        storage_bucket='agabriel-data'
+        storage_bucket='agabriel-data',
+        override_id='8b3cead0-fd3f-4b1b-812e-618b6dbc4a28'
     )
     pipeline.run_pipeline()
