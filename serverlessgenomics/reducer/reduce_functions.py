@@ -4,10 +4,13 @@ import subprocess as sp
 from lithops import Storage
 
 from ..parameters import PipelineRun, Lithops
+from ..stats import Stats
 
 def reduce_function(keys, range, mpu_id, n_part, mpu_key, pipeline_params: PipelineRun, storage: Storage):
+    mainStat, stat, subStat = Stats(), Stats(), Stats()
+    mainStat.timer_start("call_reduceFunction")
     s3 = storage.get_client()
-    
+     
     # Change working directory to /tmp
     wd = os.getcwd()
     os.chdir("/tmp")
@@ -24,7 +27,9 @@ def reduce_function(keys, range, mpu_id, n_part, mpu_key, pipeline_params: Pipel
     input_serialization = {'CSV': {'RecordDelimiter': '\n', 'FieldDelimiter': '\t'}, 'CompressionType': 'NONE'}
 
     # Execute S3 SELECT
+    stat.timer_start(expression)
     for k in keys:
+        subStat.timer_start(k)
         try:
             resp = s3.select_object_content(
                 Bucket=pipeline_params.storage_bucket,
@@ -46,6 +51,9 @@ def reduce_function(keys, range, mpu_id, n_part, mpu_key, pipeline_params: Pipel
         with open(temp_mpileup, 'a') as f:
             f.write(data)
         del data
+        subStat.timer_stop(k)
+    stat.timer_stop(expression)
+    stat.store_dictio(subStat.get_stats(), "subprocesses", expression)
 
     # Execute the script to merge and reduce
     sinple_out = sp.check_output(['bash', '/function/bin/mpileup_merge_reducev3_nosinple.sh', temp_mpileup, '/function/bin/', "75%"])
@@ -66,5 +74,8 @@ def reduce_function(keys, range, mpu_id, n_part, mpu_key, pipeline_params: Pipel
         UploadId = mpu_id,
         PartNumber = n_part
     )
+    
+    mainStat.timer_stop("call_reduceFunction")
+    mainStat.store_dictio(stat.get_stats(), "subprocesses", "call_reduceFunction")
 
-    return {"PartNumber" : n_part, "ETag" : part["ETag"], "mpu_id": mpu_id}
+    return {"PartNumber" : n_part, "ETag" : part["ETag"], "mpu_id": mpu_id}, mainStat.get_stats()

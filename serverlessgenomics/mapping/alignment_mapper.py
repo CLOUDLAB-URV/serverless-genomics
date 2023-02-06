@@ -46,12 +46,11 @@ def gem_indexer_mapper(pipeline_params: PipelineRun,
     stat = Stats()
     mapper_id = f'fa{fasta_chunk_id}-fq{fastq_chunk_id}'
     stat.timer_start(mapper_id)
-    base_name = 'SRRXXXXXX'
     map_index_key = os.path.join(pipeline_params.tmp_prefix, pipeline_params.run_id, 'gem-mapper',
-                                 f'fq{fastq_chunk_id}', f'fa{fasta_chunk_id}', base_name + '_map.index.txt.bz2')
+                                 f'fq{fastq_chunk_id}', f'fa{fasta_chunk_id}', pipeline_params.base_name + '_map.index.txt.bz2')
     filtered_map_key = os.path.join(pipeline_params.tmp_prefix, pipeline_params.run_id, 'gem-mapper',
                                     f'fq{fastq_chunk_id}', f'fa{fasta_chunk_id}',
-                                    base_name + '_filt_wline_no.map.bz2')
+                                    pipeline_params.base_name + '_filt_wline_no.map.bz2')
 
     # Check if output files already exist in storage
     try:
@@ -59,7 +58,7 @@ def gem_indexer_mapper(pipeline_params: PipelineRun,
         storage.head_object(bucket=pipeline_params.storage_bucket, key=filtered_map_key)
         # If they exist, return the keys and skip computing this chunk
         stat.timer_stop(mapper_id)
-        return fastq_chunk_id, fasta_chunk_id, map_index_key, filtered_map_key #, stat.get_stats()
+        return (fastq_chunk_id, fasta_chunk_id, map_index_key, filtered_map_key), stat.get_stats()
     except StorageNoSuchKeyError:
         # If any output is missing, proceed
         pass
@@ -99,18 +98,18 @@ def gem_indexer_mapper(pipeline_params: PipelineRun,
         # TODO use proper tmp directory instead of uuid base name
         # TODO add support for sra source
         cmd = ['/function/bin/map_index_and_filter_map_file_cmd_awsruntime.sh', gem_index_filename,
-               fastq_chunk_filename, "not-used", base_name, "s3", "single-end"]
+               fastq_chunk_filename, "not-used", pipeline_params.base_name, "s3", "single-end"]
         print(' '.join(cmd))
         out = sp.run(cmd, capture_output=True)
         print(out.stdout.decode('utf-8'))
         print(out.stderr.decode('utf-8'))
 
         # Reorganize file names
-        map_index_filename = os.path.join(tmp_dir, base_name + "_map.index.txt")
-        shutil.move(base_name + "_map.index.txt", map_index_filename)
+        map_index_filename = os.path.join(tmp_dir, pipeline_params.base_name + "_map.index.txt")
+        shutil.move(pipeline_params.base_name + "_map.index.txt", map_index_filename)
 
-        filtered_map_filename = os.path.join(tmp_dir, base_name + "_" + str(mapper_id) + "_filt_wline_no.map")
-        shutil.move(base_name + "_filt_wline_no.map", filtered_map_filename)
+        filtered_map_filename = os.path.join(tmp_dir, pipeline_params.base_name + "_" + str(mapper_id) + "_filt_wline_no.map")
+        shutil.move(pipeline_params.base_name + "_filt_wline_no.map", filtered_map_filename)
 
         # Compress outputs
         zipped_map_index_filename = map_index_filename + ".bz2"
@@ -130,10 +129,10 @@ def gem_indexer_mapper(pipeline_params: PipelineRun,
         os.chdir(pwd)
         force_delete_local_path(tmp_dir)
     stat.timer_stop(mapper_id)
-    return fastq_chunk_id, fasta_chunk_id, map_index_key, filtered_map_key #stat.get_stats()
+    return (fastq_chunk_id, fasta_chunk_id, map_index_key, filtered_map_key), stat.get_stats()
 
 
-def index_correction(pipeline_params, fastq_chunk_id, map_index_keys, storage: Storage):
+def index_correction(pipeline_params: PipelineRun, fastq_chunk_id: int, map_index_keys: Tuple[str], storage: Storage):
     """
     Lithops callee function
     Corrects the index after the first map iteration.
@@ -150,7 +149,6 @@ def index_correction(pipeline_params, fastq_chunk_id, map_index_keys, storage: S
     stat.timer_start("data_preparation")
     set_name = f'fq_{fastq_chunk_id}'
     # TODO get base name from params
-    base_name = 'SRRXXXXXX'
     pwd = os.getcwd()
 
     # TODO replace with a proper file name (maybe indicating fastq chunk id)
@@ -164,7 +162,7 @@ def index_correction(pipeline_params, fastq_chunk_id, map_index_keys, storage: S
         storage.head_object(bucket=pipeline_params.storage_bucket, key=corrected_index_key)
         stat.timer_stop("data_preparation")
         # If they exist, return the keys and skip computing this chunk
-        return fastq_chunk_id, corrected_index_key#, {set_name: stat.get_stats("data_preparation")}
+        return (fastq_chunk_id, corrected_index_key), {set_name: stat.get_stats("data_preparation")}
     except StorageNoSuchKeyError:
         # If the output is missing, proceed
         pass
@@ -174,14 +172,14 @@ def index_correction(pipeline_params, fastq_chunk_id, map_index_keys, storage: S
     output_temp_dir = tempfile.mkdtemp()
     stat.timer_stop("data_preparation")
     try:
-        #stat.timer_start(set_name, stat.get_stats("data_preparation"))
+        stat.timer_start(set_name, stat.get_stats("data_preparation")["execution_time"])
         for i, map_index_key in enumerate(map_index_keys):
             local_compressed_map_path = os.path.join(input_temp_dir, f'map_{i}.map.bz2')
             storage.download_file(bucket=pipeline_params.storage_bucket, key=map_index_key, file_name=local_compressed_map_path)
             with zipfile.ZipFile(local_compressed_map_path, 'r', compression=zipfile.ZIP_BZIP2, compresslevel=9) as zf:
                 zf.extractall(input_temp_dir)
             # TODO set proper map index file name
-            os.rename(os.path.join(input_temp_dir, f'{base_name}_map.index.txt'), os.path.join(input_temp_dir, f'{i}_map.index.txt'))
+            os.rename(os.path.join(input_temp_dir, f'{pipeline_params.base_name}_map.index.txt'), os.path.join(input_temp_dir, f'{i}_map.index.txt'))
             os.remove(local_compressed_map_path)
         print(os.listdir(input_temp_dir))
 
@@ -215,16 +213,16 @@ def index_correction(pipeline_params, fastq_chunk_id, map_index_keys, storage: S
         storage.upload_file(bucket=pipeline_params.storage_bucket, key=corrected_index_key, file_name=zipped_output_file)
 
         os.chdir(pwd)
-        #stat.timer_stop(set_name)
-        return fastq_chunk_id, corrected_index_key#, {set_name: stat.get_stats(set_name)}
+        stat.timer_stop(set_name)
+        return (fastq_chunk_id, corrected_index_key), {set_name: stat.get_stats(set_name)}
     finally:
         os.chdir(pwd)
         force_delete_local_path(input_temp_dir)
         force_delete_local_path(output_temp_dir)
 
 
-def filter_index_to_mpileup(pipeline_params, fasta_chunk_id, fasta_chunk, fastq_chunk_id, fastq_chunk,
-                            filtered_map_key, corrected_index_key, storage):
+def filter_index_to_mpileup(pipeline_params: PipelineRun, fasta_chunk_id: int, fasta_chunk: dict, fastq_chunk_id: int, fastq_chunk: dict,
+                            filtered_map_key: str, corrected_index_key: str, storage: Storage):
     """
     Second map  function, executed after the previous map function (map_alignment1) and the index correction.
 
@@ -242,13 +240,12 @@ def filter_index_to_mpileup(pipeline_params, fasta_chunk_id, fasta_chunk, fastq_
         Tuple[str]: keys to the generated txt and csv/parquet files (stored in s3)
     """    
     stat = Stats()
-    base_name = 'SRRXXXXXX'
-    stat.timer_start(f'{base_name}_fa{fasta_chunk_id}-fq{fastq_chunk_id}')
+    stat.timer_start(f'{pipeline_params.base_name}_fa{fasta_chunk_id}-fq{fastq_chunk_id}')
     temp_dir = tempfile.mkdtemp()
     pwd = os.getcwd()
     # TODO get base name from params
 
-    corrected_map_file = f'{base_name}_fa{fasta_chunk_id}-fq{fastq_chunk_id}_filt_wline_no_corrected.map'
+    corrected_map_file = f'{pipeline_params.base_name}_fa{fasta_chunk_id}-fq{fastq_chunk_id}_filt_wline_no_corrected.map'
     mpileup_file = corrected_map_file + ".mpileup"
     mpipleup_key = os.path.join(pipeline_params.tmp_prefix, pipeline_params.run_id, 'mpileups',
                                 f'fq{fastq_chunk_id}', f'fa{fasta_chunk_id}', mpileup_file)
@@ -257,8 +254,8 @@ def filter_index_to_mpileup(pipeline_params, fasta_chunk_id, fasta_chunk, fastq_
     try:
         storage.head_object(bucket=pipeline_params.storage_bucket, key=mpipleup_key)
         # If they exist, return the keys and skip computing this chunk
-        stat.timer_stop(f'{base_name}_fa{fasta_chunk_id}-fq{fastq_chunk_id}')
-        return mpipleup_key# , stat.get_stats()
+        stat.timer_stop(f'{pipeline_params.base_name}_fa{fasta_chunk_id}-fq{fastq_chunk_id}')
+        return mpipleup_key, stat.get_stats()
     except StorageNoSuchKeyError:
         # If the output is missing, proceed
         pass
@@ -292,7 +289,7 @@ def filter_index_to_mpileup(pipeline_params, fasta_chunk_id, fasta_chunk, fastq_
         print(os.listdir(temp_dir))
 
         # Filter aligments with corrected map file
-        filt_map_filename = f'{base_name}_fa{fasta_chunk_id}-fq{fastq_chunk_id}_filt_wline_no.map'
+        filt_map_filename = f'{pipeline_params.base_name}_fa{fasta_chunk_id}-fq{fastq_chunk_id}_filt_wline_no.map'
         # TODO replace with a proper file name (maybe indicating fastq chunk id)
         corrected_index_filename = 'merged_filtered_index.txt'
 
@@ -317,8 +314,8 @@ def filter_index_to_mpileup(pipeline_params, fasta_chunk_id, fasta_chunk, fastq_
                                     f'fq{fastq_chunk_id}', f'fa{fasta_chunk_id}', mpileup_file)
         storage.upload_file(bucket=pipeline_params.storage_bucket, key=mpipleup_key, file_name=f'{corrected_map_file}.mpileup')
 
-        stat.timer_stop(f'{base_name}_fa{fasta_chunk_id}-fq{fastq_chunk_id}')
-        return mpipleup_key#, stat.get_stats()
+        stat.timer_stop(f'{pipeline_params.base_name}_fa{fasta_chunk_id}-fq{fastq_chunk_id}')
+        return mpipleup_key, stat.get_stats()
     finally:
         os.chdir(pwd)
         force_delete_local_path(temp_dir)

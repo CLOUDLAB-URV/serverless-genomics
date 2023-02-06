@@ -33,6 +33,8 @@ class PipelineRun:
     tolerance: int = 0
     # fastq chunks to be processed
     fastq_chunk_range: range = None
+    # FASTQ base name
+    base_name: str = "SRRXXXXXX"
 
     # Lithops settings
     max_workers: int = 1000
@@ -84,12 +86,18 @@ def validate_parameters(params) -> PipelineRun:
     if 'fasta_chunks' not in params:
         raise KeyError()
 
-    if params['override_id'] is not None:
+    try:
         params['run_id'] = params['override_id']
         del params['override_id']
+    except:
+        pass
 
     params['fasta_path'] = S3Path.from_uri(params['fasta_path'])
     if 'fastq_path' in params:
         params['fastq_path'] = S3Path.from_uri(params['fastq_path'])
+
+    fastq_file = str(params['fastq_path']).split("/")[-1]
+    if(fastq_file[0:3] == "SRR"):
+        params["base_name"] = fastq_file.split(".")[0]
 
     return PipelineRun(**params)
