@@ -81,8 +81,13 @@ class VariantCallingPipeline:
         return mapper_output, alignReadsStat
 
     # TODO implement reduce stage
-    def reduce(self, mapper_output):
-        run_reducer(self.parameters, self.lithops, mapper_output)
+    def reduce(self, mapper_output):        
+        reduceStat = Stats()
+        reduceStat.timer_start('reduce')
+        subStat = run_reducer(self.parameters, self.lithops, mapper_output)
+        reduceStat.timer_stop('reduce')
+        reduceStat.store_dictio(subStat.get_stats(), "subprocesses", "reduce")
+        return reduceStat
 
     def run_pipeline(self):
         """
@@ -91,12 +96,12 @@ class VariantCallingPipeline:
         stats = Stats()
         stats.timer_start('pipeline')
         preprocessStat = self.preprocess()
-        mapper_output, alignReadsStat = self.align_reads()
+        mapper_output, alignReadsStat = self.align_reads()        
+        reduceStat = self.reduce(mapper_output)
         stats.timer_stop('pipeline')
         stats.store_dictio(preprocessStat.get_stats(), "preprocess_phase", "pipeline")
         stats.store_dictio(alignReadsStat.get_stats(), "alignReads_phase", "pipeline")
-        
-        self.reduce(mapper_output)
+        stats.store_dictio(reduceStat.get_stats(), "reduce_phase", "pipeline")
 
         if self.parameters.log_stats:
             stats.load_stats_to_json(self.parameters.storage_bucket, self.parameters.log_stats_name)

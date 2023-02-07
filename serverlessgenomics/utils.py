@@ -185,3 +185,11 @@ def copy_to_runtime(storage: Storage, bucket: str, folder: str, file_name: str, 
             shutil.copyfileobj(
                 storage.get_object(bucket=bucket, key=folder + file_name, stream=True, extra_get_args=byte_range), file)
     return temp_file
+
+def split_data_result(result):
+    aux_timer = []
+    aux_info = []
+    for info, timer in result:
+        aux_info.append(info)
+        aux_timer.append(timer)
+    return tuple(aux_info), aux_timer

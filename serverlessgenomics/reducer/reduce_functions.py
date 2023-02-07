@@ -6,10 +6,13 @@ from typing import Tuple
 from lithops import Storage
 from ..parameters import PipelineRun
 
+from ..stats import Stats
 
 def reduce_function(keys, range, mpu_id, n_part, mpu_key, pipeline_params: PipelineRun, storage: Storage):
+    mainStat, stat, subStat = Stats(), Stats(), Stats()
+    mainStat.timer_start("call_reduceFunction")
     s3 = storage.get_client()
-    
+     
     # Change working directory to /tmp
     wd = os.getcwd()
     os.chdir("/tmp")
@@ -26,7 +29,9 @@ def reduce_function(keys, range, mpu_id, n_part, mpu_key, pipeline_params: Pipel
     input_serialization = {'CSV': {'RecordDelimiter': '\n', 'FieldDelimiter': '\t'}, 'CompressionType': 'NONE'}
 
     # Execute S3 SELECT
+    stat.timer_start(expression)
     for k in keys:
+        subStat.timer_start(k)
         try:
             resp = s3.select_object_content(
                 Bucket=pipeline_params.storage_bucket,
@@ -48,6 +53,9 @@ def reduce_function(keys, range, mpu_id, n_part, mpu_key, pipeline_params: Pipel
         with open(temp_mpileup, 'a') as f:
             f.write(data)
         del data
+        subStat.timer_stop(k)
+    stat.timer_stop(expression)
+    stat.store_dictio(subStat.get_stats(), "subprocesses", expression)
 
     # Execute the script to merge and reduce
     sinple_out = sp.check_output(['bash', '/function/bin/mpileup_merge_reducev3_nosinple.sh', temp_mpileup, '/function/bin/', "75%"])
@@ -68,8 +76,11 @@ def reduce_function(keys, range, mpu_id, n_part, mpu_key, pipeline_params: Pipel
         UploadId = mpu_id,
         PartNumber = n_part
     )
+    
+    mainStat.timer_stop("call_reduceFunction")
+    mainStat.store_dictio(stat.get_stats(), "subprocesses", "call_reduceFunction")
 
-    return {"PartNumber" : n_part, "ETag" : part["ETag"], "mpu_id": mpu_id}
+    return {"PartNumber" : n_part, "ETag" : part["ETag"], "mpu_id": mpu_id}, mainStat.get_stats()
 
 
 def distribute_indexes(pipeline_params: PipelineRun, keys: Tuple[str], storage: Storage) -> Tuple[Tuple[str]]:
@@ -84,6 +95,8 @@ def distribute_indexes(pipeline_params: PipelineRun, keys: Tuple[str], storage: 
     Returns:
         Tuple[Tuple[str]]: Array where each position consists of the list of keys a reducer should take
     """
+    mainStat, stat, subStat = Stats(), Stats(), Stats()
+    mainStat.timer_start("call_distributeIndexes")
     s3 = storage.get_client()
     
     expression = "SELECT cast(s._2 as int) FROM s3object s"
@@ -92,7 +105,9 @@ def distribute_indexes(pipeline_params: PipelineRun, keys: Tuple[str], storage: 
     count_indexes = {}
     
     # First we get the number of times each index appears
+    stat.timer_start(expression)
     for key in keys:
+        subStat.timer_start(key)
         resp = s3.select_object_content(
                     Bucket=pipeline_params.storage_bucket,
                     Key=key,
@@ -114,11 +129,11 @@ def distribute_indexes(pipeline_params: PipelineRun, keys: Tuple[str], storage: 
         int_indexes = list(map(int, data))
 
         for index in int_indexes:
-            if index in count_indexes:
-                count_indexes[index] += 1
-            else:
-                count_indexes[index] = 1
-
+            count_indexes[index] = count_indexes.get(index, 0) + 1
+        subStat.timer_stop(key)
+    stat.timer_stop(expression)
+    stat.store_dictio(subStat.get_stats(), "subprocesses", expression)
+    
     # Now we distribute the indexes depending on the max number of indexes we want each reducer to process
     MAX_INDEXES = 20_000_000
     workers_data = []
@@ -126,15 +141,17 @@ def distribute_indexes(pipeline_params: PipelineRun, keys: Tuple[str], storage: 
     
     for key in count_indexes:
         if indexes + count_indexes[key] < MAX_INDEXES:
-            indexes = indexes + count_indexes[key]
+            indexes += count_indexes[key]
             index = key
         else: # append the last index below max_index as end value in range, and start a new range.
             indexes = 0
             workers_data.append(index)
-    last = list(count_indexes)[-1]
-    workers_data.append(last)
+    workers_data.append(key)
     
-    return workers_data
+    mainStat.timer_stop("call_distributeIndexes")
+    mainStat.store_dictio(stat.get_stats(), "subprocesses", "call_distributeIndexes")
+    
+    return workers_data, mainStat.get_stats()
 
 
 def final_merge(mpu_id: str, mpu_key: str, key: str, n_part: int, pipeline_params: PipelineRun, storage: Storage) -> dict:
@@ -152,6 +169,9 @@ def final_merge(mpu_id: str, mpu_key: str, key: str, n_part: int, pipeline_param
     Returns:
         dict: Dictionary with the multipart upload settings
     """
+    stat = Stats()
+    stat.timer_start("call_finalMerge")
+
     sinple_out = storage.get_object(bucket=pipeline_params.storage_bucket, key=key)
 
     #Upload part
@@ -163,8 +183,9 @@ def final_merge(mpu_id: str, mpu_key: str, key: str, n_part: int, pipeline_param
         UploadId = mpu_id,
         PartNumber = n_part
     )
-    
-    return {"PartNumber" : n_part, "ETag" : part["ETag"], "mpu_id": mpu_id}
+    stat.timer_stop("call_finalMerge")
+
+    return {"PartNumber" : n_part, "ETag" : part["ETag"], "mpu_id": mpu_id}, stat.get_stats()
 
 
 def finish(key: str, mpu_id: str, parts: Tuple[dict], pipeline_params: PipelineRun, s3: Storage):
@@ -225,8 +246,7 @@ def complete_multipart(keys: Tuple[str], mpu_ids: Tuple[str], parts: Tuple[dict]
             MultipartUpload = {"Parts": mpu_part}
         )
 
-        for _ in range(remove):
-            parts.pop(0)
+        parts = parts[remove:]
 
   
 def keys_by_fasta_split(keys: Tuple[str]) -> dict:

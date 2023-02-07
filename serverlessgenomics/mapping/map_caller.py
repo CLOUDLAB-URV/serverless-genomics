@@ -5,6 +5,7 @@ import logging
 from .alignment_mapper import gem_indexer_mapper, index_correction, filter_index_to_mpileup
 from ..parameters import PipelineRun, Lithops
 from ..stats import Stats
+from ..utils import split_data_result
 
 logger = logging.getLogger(__name__)
 
@@ -51,16 +52,6 @@ def generate_index_to_mpileup_iterdata(pipeline_params, fasta_chunks, fastq_chun
 
     return iterdata
 
-
-def split_data_result(result):
-    aux_timer = []
-    aux_info = []
-    for info, timer in result:
-        aux_info.append(info)
-        aux_timer.append(timer)
-    return aux_info, aux_timer
-
-
 def run_full_alignment(pipeline_params: PipelineRun, lithops: Lithops, fasta_chunks, fastq_chunks):
     """
     Execute the map phase
@@ -83,8 +74,8 @@ def run_full_alignment(pipeline_params: PipelineRun, lithops: Lithops, fasta_chu
     iterdata = generate_gem_indexer_mapper_iterdata(pipeline_params, fasta_chunks, fastq_chunks)
     gem_indexer_mapper_result = lithops.invoker.map(gem_indexer_mapper, iterdata)  
     subStat.timer_stop('gem_indexer_mapper')
-    #gem_indexer_mapper_result, timers = split_data_result(gem_indexer_mapper_result)
-    #subStat.store_dictio(timers, "subprocesses", "gem_indexer_mapper")
+    gem_indexer_mapper_result, timers = split_data_result(gem_indexer_mapper_result)
+    subStat.store_dictio(timers, "subprocesses", "gem_indexer_mapper")
     
     # MAP: Index correction
     logger.debug("PROCESSING INDEX CORRECTION") 
@@ -93,8 +84,8 @@ def run_full_alignment(pipeline_params: PipelineRun, lithops: Lithops, fasta_chu
     iterdata = generate_index_correction_iterdata(pipeline_params, gem_indexer_mapper_result)
     index_correction_result = lithops.invoker.map(index_correction, iterdata)
     subStat.timer_stop('index_correction')  
-    #index_correction_result, timers = split_data_result(index_correction_result)
-    #subStat.store_dictio(timers, "subprocesses", "index_correction")
+    index_correction_result, timers = split_data_result(index_correction_result)
+    subStat.store_dictio(timers, "subprocesses", "index_correction")
 
     # Map: Stage 2
     logger.debug("PROCESSING MAP: STAGE 2") 
@@ -103,7 +94,7 @@ def run_full_alignment(pipeline_params: PipelineRun, lithops: Lithops, fasta_chu
                                                   gem_indexer_mapper_result, index_correction_result)
     alignment_output = lithops.invoker.map(filter_index_to_mpileup, iterdata)
     subStat.timer_stop('filter_index_to_mpileup')  
-    #alignment_output, timers = split_data_result(alignment_output)
-    #subStat.store_dictio(timers, "subprocesses", "filter_index_to_mpileup")
+    alignment_output, timers = split_data_result(alignment_output)
+    subStat.store_dictio(timers, "subprocesses", "filter_index_to_mpileup")
 
     return alignment_output, subStat

@@ -28,7 +28,9 @@ class Stats:
             raise Exception(f'You can not execute this function before "timer_start".')
     
     def store_size_data(self, name_data, size, script=None):
-        if script is None: 
+        if not size.isnumeric():
+             raise Exception(f'The input data is not numeric.')
+        elif script is None: 
                 dictionary = self.__stats
         else:                
             if script not in self.__stats:

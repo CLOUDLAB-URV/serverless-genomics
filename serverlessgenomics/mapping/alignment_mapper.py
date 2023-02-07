@@ -58,7 +58,7 @@ def gem_indexer_mapper(pipeline_params: PipelineRun,
         storage.head_object(bucket=pipeline_params.storage_bucket, key=filtered_map_key)
         # If they exist, return the keys and skip computing this chunk
         stat.timer_stop(mapper_id)
-        return fastq_chunk_id, fasta_chunk_id, map_index_key, filtered_map_key #, stat.get_stats()
+        return (fastq_chunk_id, fasta_chunk_id, map_index_key, filtered_map_key), stat.get_stats()
     except StorageNoSuchKeyError:
         # If any output is missing, proceed
         pass
@@ -129,7 +129,7 @@ def gem_indexer_mapper(pipeline_params: PipelineRun,
         os.chdir(pwd)
         force_delete_local_path(tmp_dir)
     stat.timer_stop(mapper_id)
-    return fastq_chunk_id, fasta_chunk_id, map_index_key, filtered_map_key #stat.get_stats()
+    return (fastq_chunk_id, fasta_chunk_id, map_index_key, filtered_map_key), stat.get_stats()
 
 
 def index_correction(pipeline_params: PipelineRun, fastq_chunk_id: int, map_index_keys: Tuple[str], storage: Storage):
@@ -162,7 +162,7 @@ def index_correction(pipeline_params: PipelineRun, fastq_chunk_id: int, map_inde
         storage.head_object(bucket=pipeline_params.storage_bucket, key=corrected_index_key)
         stat.timer_stop("data_preparation")
         # If they exist, return the keys and skip computing this chunk
-        return fastq_chunk_id, corrected_index_key#, {set_name: stat.get_stats("data_preparation")}
+        return (fastq_chunk_id, corrected_index_key), {set_name: stat.get_stats("data_preparation")}
     except StorageNoSuchKeyError:
         # If the output is missing, proceed
         pass
@@ -172,7 +172,7 @@ def index_correction(pipeline_params: PipelineRun, fastq_chunk_id: int, map_inde
     output_temp_dir = tempfile.mkdtemp()
     stat.timer_stop("data_preparation")
     try:
-        #stat.timer_start(set_name, stat.get_stats("data_preparation"))
+        stat.timer_start(set_name, stat.get_stats("data_preparation")["execution_time"])
         for i, map_index_key in enumerate(map_index_keys):
             local_compressed_map_path = os.path.join(input_temp_dir, f'map_{i}.map.bz2')
             storage.download_file(bucket=pipeline_params.storage_bucket, key=map_index_key, file_name=local_compressed_map_path)
@@ -213,8 +213,8 @@ def index_correction(pipeline_params: PipelineRun, fastq_chunk_id: int, map_inde
         storage.upload_file(bucket=pipeline_params.storage_bucket, key=corrected_index_key, file_name=zipped_output_file)
 
         os.chdir(pwd)
-        #stat.timer_stop(set_name)
-        return fastq_chunk_id, corrected_index_key#, {set_name: stat.get_stats(set_name)}
+        stat.timer_stop(set_name)
+        return (fastq_chunk_id, corrected_index_key), {set_name: stat.get_stats(set_name)}
     finally:
         os.chdir(pwd)
         force_delete_local_path(input_temp_dir)
@@ -255,7 +255,8 @@ def filter_index_to_mpileup(pipeline_params: PipelineRun, fasta_chunk_id: int, f
         storage.head_object(bucket=pipeline_params.storage_bucket, key=mpipleup_key)
         # If they exist, return the keys and skip computing this chunk
         stat.timer_stop(f'{pipeline_params.base_name}_fa{fasta_chunk_id}-fq{fastq_chunk_id}')
-        return mpipleup_key# , stat.get_stats()
+        return mpipleup_key, stat.get_stats()
+
     except StorageNoSuchKeyError:
         # If the output is missing, proceed
         pass
@@ -315,7 +316,8 @@ def filter_index_to_mpileup(pipeline_params: PipelineRun, fasta_chunk_id: int, f
         storage.upload_file(bucket=pipeline_params.storage_bucket, key=mpipleup_key, file_name=f'{corrected_map_file}.mpileup')
 
         stat.timer_stop(f'{pipeline_params.base_name}_fa{fasta_chunk_id}-fq{fastq_chunk_id}')
-        return mpipleup_key#, stat.get_stats()
+        return mpipleup_key, stat.get_stats()
+
     finally:
         os.chdir(pwd)
         force_delete_local_path(temp_dir)
