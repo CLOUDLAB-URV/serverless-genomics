@@ -1,6 +1,7 @@
 import logging
 from typing import Tuple
 import lithops as deflithops
+import boto3
 
 from ..parameters import PipelineRun, Lithops
 
@@ -79,16 +80,17 @@ def run_reducer(pipeline_params: PipelineRun, lithops: Lithops, mapper_output):
 
     logger.debug("DISTRIBUTING INDEXES BETWEEN REDUCERS")
     subStat.timer_start('distribute_indexes')
-    distributed_indexes = lithops.invoker.map(distribute_indexes, indexes_iterdata)
+    distributed_indexes = lithops.map(distribute_indexes, indexes_iterdata).get_result()
     subStat.timer_stop('distribute_indexes')
     distributed_indexes, timers = split_data_result(distributed_indexes)
-    subStat.store_dictio(timers, "subprocesses", "distribute_indexes") 
+    subStat.store_dictio(timers, "subprocesses", "distribute_indexes")
+        
     
     # 5 Launch the reducers
     logger.debug("EXECUTING REDUCE FUNCTION")
     reducer_iterdata = create_iterdata_reducer(intermediate_keys, distributed_indexes, multipart_ids, multipart_keys, pipeline_params)
     subStat.timer_start('reduce_function')
-    reducer_output = lithops.invoker.map(reduce_function, reducer_iterdata)
+    reducer_output = lithops.map(reduce_function, reducer_iterdata).get_result()
     subStat.timer_stop('reduce_function')
     reducer_output, timers = split_data_result(reducer_output)
     subStat.store_dictio(timers, "subprocesses", "reduce_function")
@@ -118,7 +120,7 @@ def run_reducer(pipeline_params: PipelineRun, lithops: Lithops, mapper_output):
 
     logger.debug("EXECUTING FINAL MERGE")
     subStat.timer_start('final_merge')
-    final_merge_results = lithops.invoker.map(final_merge, merge_iterdata)
+    final_merge_results = lithops.map(final_merge, merge_iterdata).get_result()
     subStat.timer_stop('final_merge')
     final_merge_results, timers = split_data_result(final_merge_results)
     subStat.store_dictio(timers, "subprocesses", "final_merge")
