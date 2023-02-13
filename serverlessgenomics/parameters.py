@@ -35,6 +35,12 @@ class PipelineRun:
     fastq_chunk_range: range = None
     # FASTQ base name
     base_name: str = "SRRXXXXXX"
+    # Skip PreProcessing Stage
+    skip_prep: bool = False
+    # Skip Map Stage
+    skip_map: bool = False
+    # Skip Reduce Stage
+    skip_reduce: bool = False
 
     # Lithops settings
     max_workers: int = 1000

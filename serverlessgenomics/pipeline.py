@@ -95,9 +95,20 @@ class VariantCallingPipeline:
         """
         stats = Stats()
         stats.timer_start('pipeline')
-        preprocessStat = self.preprocess()
-        mapper_output, alignReadsStat = self.align_reads()        
-        reduceStat = self.reduce(mapper_output)
+        
+        # PreProcess Stage
+        if self.parameters.skip_prep is False:
+            preprocessStat = self.preprocess()
+        
+        # Map Stage
+        if self.parameters.skip_map is False:
+            mapper_output, alignReadsStat = self.align_reads()
+            
+        # Reduce Stage
+        #TODO: If map phase was skipped an alternative mapper_ouput needs to be provided or generated
+        if self.parameters.skip_reduce is False:       
+            reduceStat = self.reduce(mapper_output)
+            
         stats.timer_stop('pipeline')
         stats.store_dictio(preprocessStat.get_stats(), "preprocess_phase", "pipeline")
         stats.store_dictio(alignReadsStat.get_stats(), "alignReads_phase", "pipeline")
