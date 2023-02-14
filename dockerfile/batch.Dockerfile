@@ -117,6 +117,8 @@ COPY gempileup_run.sh ${BINS_DIR}/gempileup_run.sh
 COPY gempileup_v7.sh ${BINS_DIR}/gempileup_v7.sh
 COPY gempileup_merge.sh ${BINS_DIR}/gempileup_merge.sh
 COPY mpileup_merge_reducev3_nosinple.sh ${BINS_DIR}/mpileup_merge_reducev3_nosinple.sh
+COPY mpileup_merge_reducev3.sh ${BINS_DIR}/mpileup_merge_reducev3.sh
+COPY SiNPle-0.5 ${BINS_DIR}/SiNPle-0.5
 
 # Copy index correction scripts
 COPY binary_reducer.sh ${BINS_DIR}/binary_reducer.sh
