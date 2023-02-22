@@ -10,6 +10,7 @@ if __name__ == '__main__':
         fastq_chunks=20,
         log_level=logging.DEBUG,
         storage_bucket='agabriel-data',
-        override_id='8b3cead0-fd3f-4b1b-812e-618b6dbc4a28'
+        override_id='8b3cead0-fd3f-4b1b-812e-618b6dbc4a28',
+        log_stats=True
     )
     pipeline.run_pipeline()

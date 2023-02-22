@@ -110,9 +110,13 @@ class VariantCallingPipeline:
             reduceStat = self.reduce(mapper_output)
             
         stats.timer_stop('pipeline')
-        stats.store_dictio(preprocessStat.get_stats(), "preprocess_phase", "pipeline")
-        stats.store_dictio(alignReadsStat.get_stats(), "alignReads_phase", "pipeline")
-        stats.store_dictio(reduceStat.get_stats(), "reduce_phase", "pipeline")
+        
+        if self.parameters.skip_prep is False:
+            stats.store_dictio(preprocessStat.get_stats(), "preprocess_phase", "pipeline")
+        if self.parameters.skip_map is False:
+            stats.store_dictio(alignReadsStat.get_stats(), "alignReads_phase", "pipeline")
+        if self.parameters.skip_reduce is False:   
+            stats.store_dictio(reduceStat.get_stats(), "reduce_phase", "pipeline")
 
         if self.parameters.log_stats:
             stats.load_stats_to_json(self.parameters.storage_bucket, self.parameters.log_stats_name)
