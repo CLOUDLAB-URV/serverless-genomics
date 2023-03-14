@@ -1,5 +1,5 @@
 # Dockerfile used to create the runtime needed to execute the Genomics Pipeline
-# Example command to build: lithops runtime build -b k8s -f Dockerfile user_name/runtime_name:1.0
+# Example command to build: lithops runtime build -f MyDockerfile -b aws_lambda my-container-runtime-name
 
 ########################################################
 # PYTHON 3.8
@@ -81,26 +81,22 @@ RUN apt-get update  \
 ########################################################
 # PYTHON MODULES
 ########################################################
-RUN pip install --upgrade setuptools six pip \
-    && pip install --no-cache-dir \
-        flask \
-        pika \
-        ibm-cos-sdk \
+RUN pip install --upgrade --ignore-installed pip wheel six setuptools \
+    && pip install --upgrade --no-cache-dir --ignore-installed \
+        awslambdaric \
+        boto3 \
         redis \
-        gevent \
+        httplib2 \
         requests \
-        PyYAML \
-        kubernetes \
         numpy \
+        scipy \
+        pandas \
+        pika \
+        kafka-python \
         cloudpickle \
         ps-mem \
         tblib \
         # Pipeline specific
-        boto3 \
-        pandas \
-        httplib2 \
-        scipy \
-        kafka-python \
         pyarrow \
         fastparquet
 
@@ -114,6 +110,10 @@ COPY parse_gem_maxindex_minimapfile_stdin_v2.sh ${BINS_DIR}/parse_gem_maxindex_m
 COPY gempileup_run.sh ${BINS_DIR}/gempileup_run.sh
 COPY gempileup_v7.sh ${BINS_DIR}/gempileup_v7.sh
 COPY gempileup_merge.sh ${BINS_DIR}/gempileup_merge.sh
+COPY mpileup_merge_reducev3_nosinple.sh ${BINS_DIR}/mpileup_merge_reducev3_nosinple.sh
+COPY mpileup_merge_reducev3.sh ${BINS_DIR}/mpileup_merge_reducev3.sh
+COPY SiNPle-0.5 ${BINS_DIR}/SiNPle-0.5
+COPY com ${BINS_DIR}/com
 
 # Copy index correction scripts
 COPY binary_reducer.sh ${BINS_DIR}/binary_reducer.sh
@@ -129,13 +129,20 @@ ENV PYTHONUNBUFFERED TRUE
 ARG FUNCTION_DIR
 ARG BINS_DIR
 
-# Copy Lithops proxy and lib to the container image.
-ENV APP_HOME /lithops
-WORKDIR $APP_HOME
+# Set working directory to function root directory
+WORKDIR ${FUNCTION_DIR}
+
+# Add Lithops
+COPY lithops_lambda.zip ${FUNCTION_DIR}
+RUN unzip lithops_lambda.zip \
+    && rm lithops_lambda.zip \
+    && mkdir handler \
+    && touch handler/__init__.py \
+    && mv entry_point.py handler/
 
 # Change script permissions and add the tools to the system path
 RUN chmod -R ugoa+rwx ${BINS_DIR}
 ENV PATH="${BINS_DIR}:${PATH}"
 
-COPY lithops_k8s.zip .
-RUN unzip lithops_k8s.zip && rm lithops_k8s.zip
+ENTRYPOINT [ "/usr/local/bin/python", "-m", "awslambdaric" ]
+CMD [ "handler.entry_point.lambda_handler" ]

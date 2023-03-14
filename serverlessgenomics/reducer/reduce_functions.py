@@ -1,6 +1,6 @@
 from collections import defaultdict
 import os
-import subprocess as sp
+from subprocess import Popen, PIPE, STDOUT
 from typing import Tuple
 
 from lithops import Storage
@@ -16,13 +16,6 @@ def reduce_function(keys, range, mpu_id, n_part, mpu_key, pipeline_params: Pipel
     # Change working directory to /tmp
     wd = os.getcwd()
     os.chdir("/tmp")
-    
-    # File where we will store the data we get from the SELECT queries
-    temp_mpileup = '/tmp/reduce.mpileup'
-    
-    # Delete previous run files if they exist
-    if(os.path.exists(temp_mpileup)):
-        os.remove(temp_mpileup)
 
     # S3 SELECT query to get the rows where the second column is in the selected range
     expression = "SELECT * FROM s3object s WHERE cast(s._2 as int) BETWEEN %s AND %s" % (range['start'], range['end'])
@@ -30,6 +23,7 @@ def reduce_function(keys, range, mpu_id, n_part, mpu_key, pipeline_params: Pipel
 
     # Execute S3 SELECT
     transfer_stats.timer_start("s3_select")
+    mpileup_data = ""
     for k in keys:
         try:
             resp = s3.select_object_content(
@@ -43,28 +37,25 @@ def reduce_function(keys, range, mpu_id, n_part, mpu_key, pipeline_params: Pipel
         except:
             raise ValueError("ERROR IN KEY: " + k)
 
-        data = ""
         for event in resp['Payload']:
             if 'Records' in event:
                 records = event['Records']['Payload'].decode("UTF-8")
-                data = data + records
+                mpileup_data = mpileup_data + records
+                del records
 
-        with open(temp_mpileup, 'a') as f:
-            f.write(data)
-        del data
     transfer_stats.timer_stop("s3_select")
 
+    # Str -> bytes 
+    mpileup_data = mpileup_data.encode("UTF-8")
+
     # Execute the script to merge and reduce
-    sinple_out = sp.check_output(['bash', '/function/bin/mpileup_merge_reducev3_nosinple.sh', temp_mpileup, '/function/bin/', "75%"])
+    p = Popen(['bash', 
+               '/function/bin/mpileup_merge_reducev4_nosinple.sh',
+               '/function/bin/',
+               '75%'], stdout=PIPE, stdin=PIPE, stderr=PIPE)
+    sinple_out = p.communicate(input=mpileup_data)[0]
     sinple_out = sinple_out.decode('UTF-8')
 
-    # Final file
-    sinple_name=temp_mpileup+'_merged.mpileup'
-
-    # write output to /tmp
-    with open(sinple_name, 'w') as f:
-        f.write(sinple_out)
-    
     #Upload part
     transfer_stats.timer_start("upload_part")
     part = s3.upload_part(
@@ -131,7 +122,7 @@ def distribute_indexes(pipeline_params: PipelineRun, keys: Tuple[str], storage: 
     transfer_stats.timer_stop("s3_select")
     
     # Now we distribute the indexes depending on the max number of indexes we want each reducer to process
-    MAX_INDEXES = 20_000_000
+    MAX_INDEXES = 50_000_000
     workers_data = []
     indexes = 0
     

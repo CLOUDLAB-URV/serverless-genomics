@@ -19,7 +19,7 @@ def fetch_fastq_chunk(fastq_chunk: dict, target_filename: str, storage: lithops.
     tmp_index_file = tempfile.mktemp()
     gztool = get_gztool_path()
     lines = []
-    lines_to_read = fastq_chunk['line_1'] - fastq_chunk['line_0'] - 1
+    lines_to_read = fastq_chunk['line_1'] - fastq_chunk['line_0'] + 1
 
     try:
         t0 = time.perf_counter()
@@ -94,7 +94,7 @@ def fetch_fastq_chunk(fastq_chunk: dict, target_filename: str, storage: lithops.
 
         # TODO write lines to file as decompressed instead of saving them all in memory
         with open(target_filename, 'w') as target_file:
-            target_file.writelines((line + '\n' for line in lines[:fastq_chunk['line_1'] - fastq_chunk['line_0'] - 1]))
+            target_file.writelines((line + '\n' for line in lines[:fastq_chunk['line_1'] - fastq_chunk['line_0']]))
 
     finally:
         force_delete_local_path(tmp_index_file)

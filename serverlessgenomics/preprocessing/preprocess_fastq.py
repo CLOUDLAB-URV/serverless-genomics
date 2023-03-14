@@ -219,7 +219,7 @@ def prepare_fastq_chunks(pipeline_params: PipelineRun, lithops: Lithops):
     # Adjust last pair for num batches not multiple of number of total reads (last batch will have fewer lines)
     if line_pairs[-1][1] > num_lines:
         l0, _ = line_pairs[-1]
-        line_pairs[-1] = (l0, num_lines)
+        line_pairs[-1] = (l0, num_lines + 1)
 
     # Get byte ranges from line pairs using GZip index
     # TODO maybe call this function using lithops? currenty it needs to download the tab file to local process, compare if it is faster invoking remote lambda
