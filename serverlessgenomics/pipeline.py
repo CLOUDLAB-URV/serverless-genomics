@@ -77,7 +77,7 @@ class VariantCallingPipeline:
         alignReadsStat.timer_start('align_reads')
         mapper_output, subStat = run_full_alignment(self.parameters, self.lithops, self.fasta_chunks, self.fastq_chunks)
         alignReadsStat.timer_stop('align_reads')
-        alignReadsStat.store_dictio(subStat.get_stats(), "subprocesses", "align_reads")
+        alignReadsStat.store_dictio(subStat.get_stats(), "phases", "align_reads")
         return mapper_output, alignReadsStat
 
     # TODO implement reduce stage
@@ -86,14 +86,28 @@ class VariantCallingPipeline:
         reduceStat.timer_start('reduce')
         subStat = run_reducer(self.parameters, self.lithops, mapper_output)
         reduceStat.timer_stop('reduce')
-        reduceStat.store_dictio(subStat.get_stats(), "subprocesses", "reduce")
+        reduceStat.store_dictio(subStat.get_stats(), "phases", "reduce")
         return reduceStat
 
+    def pipeline_stats(self):
+        stats, params = Stats(), Stats()
+        
+        stats.store_size_data("fasta_path", str(self.parameters.fasta_path))
+        stats.store_size_data("fastq_path", str(self.parameters.fastq_path))
+        stats.store_size_data("fastq_chunks", self.parameters.fastq_chunks)
+        stats.store_size_data("fasta_chunks", self.parameters.fasta_chunks)
+        stats.store_size_data("run_id", str(self.parameters.run_id))
+        if(self.parameters.fastq_chunk_range is not None):
+            stats.store_size_data("fastq_range", str(self.parameters.fastq_chunk_range))
+        
+        stats.store_dictio(params.get_stats(), "pipeline_params")
+        return stats
+    
     def run_pipeline(self):
         """
         Execute all pipeline steps in order
         """
-        stats = Stats()
+        stats: Stats = self.pipeline_stats()
         stats.timer_start('pipeline')
         
         # PreProcess Stage

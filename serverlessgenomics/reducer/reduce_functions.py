@@ -2,6 +2,8 @@ from collections import defaultdict
 import os
 from subprocess import Popen, PIPE, STDOUT
 from typing import Tuple
+from time import time
+from sys import getsizeof
 
 from lithops import Storage
 from ..parameters import PipelineRun
@@ -9,7 +11,8 @@ from ..parameters import PipelineRun
 from ..stats import Stats
 
 def reduce_function(keys, range, mpu_id, n_part, mpu_key, pipeline_params: PipelineRun, storage: Storage):
-    mainStat, transfer_stats = Stats(), Stats()
+    mainStat, timestamps, data_sizes = Stats(), Stats(), Stats()
+    timestamps.store_size_data("start", time())
     mainStat.timer_start(f"reduce_{mpu_id}_{n_part}")
     s3 = storage.get_client()
      
@@ -18,11 +21,11 @@ def reduce_function(keys, range, mpu_id, n_part, mpu_key, pipeline_params: Pipel
     os.chdir("/tmp")
 
     # S3 SELECT query to get the rows where the second column is in the selected range
+    timestamps.store_size_data("s3_queries", time())
     expression = "SELECT * FROM s3object s WHERE cast(s._2 as int) BETWEEN %s AND %s" % (range['start'], range['end'])
     input_serialization = {'CSV': {'RecordDelimiter': '\n', 'FieldDelimiter': '\t'}, 'CompressionType': 'NONE'}
 
     # Execute S3 SELECT
-    transfer_stats.timer_start("s3_select")
     mpileup_data = ""
     for k in keys:
         try:
@@ -36,28 +39,29 @@ def reduce_function(keys, range, mpu_id, n_part, mpu_key, pipeline_params: Pipel
             )
         except:
             raise ValueError("ERROR IN KEY: " + k)
-
+        
         for event in resp['Payload']:
             if 'Records' in event:
                 records = event['Records']['Payload'].decode("UTF-8")
                 mpileup_data = mpileup_data + records
                 del records
 
-    transfer_stats.timer_stop("s3_select")
-
+    data_sizes.store_size_data(f"total_data_from_select_range_{range['start']}_{range['end']}", getsizeof(mpileup_data) / (1024*1024))
+    
     # Str -> bytes 
     mpileup_data = mpileup_data.encode("UTF-8")
 
     # Execute the script to merge and reduce
+    timestamps.store_size_data("mpileup_merge_reduce", time())
     p = Popen(['bash', 
-               '/function/bin/mpileup_merge_reducev4_nosinple.sh',
+               '/function/bin/mpileup_merge_reducev3.sh',
                '/function/bin/',
                '75%'], stdout=PIPE, stdin=PIPE, stderr=PIPE)
     sinple_out = p.communicate(input=mpileup_data)[0]
     sinple_out = sinple_out.decode('UTF-8')
 
     #Upload part
-    transfer_stats.timer_start("upload_part")
+    timestamps.store_size_data("upload_part", time())
     part = s3.upload_part(
         Body = sinple_out,
         Bucket = pipeline_params.storage_bucket,
@@ -65,10 +69,14 @@ def reduce_function(keys, range, mpu_id, n_part, mpu_key, pipeline_params: Pipel
         UploadId = mpu_id,
         PartNumber = n_part
     )
-    transfer_stats.timer_stop("upload_part")
+    data_sizes.store_size_data(f'part_{n_part}', getsizeof(sinple_out) / (1024*1024))
+    data_sizes.store_size_data("keys", keys)
+    
+    timestamps.store_size_data("end", time())
     
     mainStat.timer_stop(f"reduce_{mpu_id}_{n_part}")
-    mainStat.store_dictio(transfer_stats.get_stats(), "Data Transfers")
+    mainStat.store_dictio(timestamps.get_stats(), "timestamps", f"reduce_{mpu_id}_{n_part}")
+    mainStat.store_dictio(data_sizes.get_stats(), "data_sizes", f"reduce_{mpu_id}_{n_part}")
 
     return {"PartNumber" : n_part, "ETag" : part["ETag"], "mpu_id": mpu_id}, mainStat.get_stats()
 
@@ -85,7 +93,8 @@ def distribute_indexes(pipeline_params: PipelineRun, keys: Tuple[str], storage: 
     Returns:
         Tuple[Tuple[str]]: Array where each position consists of the list of keys a reducer should take
     """
-    mainStat, transfer_stats = Stats(), Stats()
+    mainStat, timestamps, data_sizes = Stats(), Stats(), Stats()
+    timestamps.store_size_data("start", time())
     mainStat.timer_start(f"distribute_indexes_{keys[0]}")
     s3 = storage.get_client()
     
@@ -95,7 +104,7 @@ def distribute_indexes(pipeline_params: PipelineRun, keys: Tuple[str], storage: 
     count_indexes = {}
     
     # First we get the number of times each index appears
-    transfer_stats.timer_start("s3_select")
+    timestamps.store_size_data("s3_queries", time())
     for key in keys:
         resp = s3.select_object_content(
                     Bucket=pipeline_params.storage_bucket,
@@ -105,13 +114,13 @@ def distribute_indexes(pipeline_params: PipelineRun, keys: Tuple[str], storage: 
                     InputSerialization = input_serialization,
                     OutputSerialization = {'CSV': {}}
                 )
+        
 
         data = ""
         for event in resp['Payload']:
             if 'Records' in event:
                 records = event['Records']['Payload'].decode("UTF-8")
-                data = data + records
-                
+                data = data + records     
         data = data.split("\n")
         data.pop()  # Last value is empty
         
@@ -119,9 +128,12 @@ def distribute_indexes(pipeline_params: PipelineRun, keys: Tuple[str], storage: 
 
         for index in int_indexes:
             count_indexes[index] = count_indexes.get(index, 0) + 1
-    transfer_stats.timer_stop("s3_select")
+    
+    data_sizes.store_size_data("total_data_from_select", getsizeof(data) / (1024*1024))
+    data_sizes.store_size_data("keys", keys)
     
     # Now we distribute the indexes depending on the max number of indexes we want each reducer to process
+    timestamps.store_size_data("distribute_indexes", time())
     MAX_INDEXES = 50_000_000
     workers_data = []
     indexes = 0
@@ -135,8 +147,11 @@ def distribute_indexes(pipeline_params: PipelineRun, keys: Tuple[str], storage: 
             workers_data.append(index)
     workers_data.append(key)
     
+    timestamps.store_size_data("end", time())
+    
     mainStat.timer_stop(f"distribute_indexes_{keys[0]}")
-    mainStat.store_dictio(transfer_stats.get_stats(), "Transfer Stats")
+    mainStat.store_dictio(timestamps.get_stats(), "timestamps", f"distribute_indexes_{keys[0]}")
+    mainStat.store_dictio(data_sizes.get_stats(), "data_sizes", f"distribute_indexes_{keys[0]}")
     
     return workers_data, mainStat.get_stats()
 

@@ -25,7 +25,42 @@ rel_bpos = relative position of each base called within the trimmed read
 # COMMAND LINE EXAMPLES
 # ============================================================================ #
 
-COMMAND LINE
+# minimal test - SRR6052133 subset
+
+1) debug
+bash gempileup_v7.sh \
+/home/lumar/data/Tbrucei/map/SRR6052133_1_TriTrypDB-9.0_TbruceiTREU927_Genome_MbChr.fasta.se_4000.map  \
+/home/lumar/data/Tbrucei/fasta/TriTrypDB-9.0_TbruceiTREU927_Genome_MbChr.fasta \
+True > /home/lumar/data/Tbrucei/mpileup/SRR6052133_1_TriTrypDB-9.0_TbruceiTREU927_Genome_MbChr.fasta.se_4000.map.nomerge.debug.mpileup
+
+2) nomerge
+bash gempileup_v7.sh \
+/home/lumar/data/Tbrucei/map/SRR6052133_1_TriTrypDB-9.0_TbruceiTREU927_Genome_MbChr.fasta.se_4000.map  \
+/home/lumar/data/Tbrucei/fasta/TriTrypDB-9.0_TbruceiTREU927_Genome_MbChr.fasta \
+False > /home/lumar/data/Tbrucei/mpileup/SRR6052133_1_TriTrypDB-9.0_TbruceiTREU927_Genome_MbChr.fasta.se_4000.map.nomerge.mpileup
+
+2) test fix
+bash gempileup_v7.sh \
+/home/lumar/data/Tbrucei/map/SRR6052133_1_TriTrypDB-9.0_TbruceiTREU927_Genome_MbChr.fasta.se_4000.map  \
+/home/lumar/data/Tbrucei/fasta/TriTrypDB-9.0_TbruceiTREU927_Genome_MbChr.fasta |\
+bash  gempileup_merge.sh > /home/lumar/data/Tbrucei/mpileup/SRR6052133_1_TriTrypDB-9.0_TbruceiTREU927_Genome_MbChr.fasta.se_4000.map.mpileup
+awk '
+{
+    if ($2==prev_pos) {
+        print "found duplicate positions:"
+        print prev_line
+        print $0
+    }
+    prev_pos=$2
+    prev_line=$0
+    #print prev_line
+}' /home/lumar/data/Tbrucei/mpileup/SRR6052133_1_TriTrypDB-9.0_TbruceiTREU927_Genome_MbChr.fasta.se_4000.map.mpileup
+
+3) test with sinple
+cat /home/lumar/data/Tbrucei/mpileup/SRR6052133_1_TriTrypDB-9.0_TbruceiTREU927_Genome_MbChr.fasta.se_4000.map.mpileup | ./SiNPle-0.5 \
+> /home/lumar/data/Tbrucei/sinple/SRR6052133_1_TriTrypDB-9.0_TbruceiTREU927_Genome_MbChr.fasta.se_4000.map.mpileup.sinple
+
+# larger test - SRR15068323
 (288M map file and 139M fasta file)
 1) debug
 bash gempileup_v7.sh \
@@ -51,6 +86,13 @@ time bash gempileup_v7.sh \
 /home/lumar/data/Hsapiens/fasta/hg19_145450269split_00000001.fasta |\
 ./gempileup_merge.sh | \
 ./SiNPle-0.5 > SRR15068323_split_1_22__hg19_145450269split_00000001.se.map.mpileup.sinple
+
+on HPC
+3) for mpileup output 
+time bash bin/gempileup_v7.sh \
+map/SRR15068323_split_1_22__hg19_145450269split_00000001.se.map \
+fasta/hg19_145450269split_00000001.fasta |\
+bash  gempileup_merge.sh > mpileup/SRR15068323_split_1_22__hg19_145450269split_00000001.se.map.mpileup
 
 # ============================================================================ #
 # Samtools mpileup generation for comparison
@@ -83,6 +125,8 @@ samtools mpileup -A -B -Q 0 \
 # test sinple
 cat /home/lumar/data/Hsapiens/sam/test_chr1_13446188_1aln.mpileup | ./SiNPle-0.5 > \
 /home/lumar/data/Hsapiens/sam/test_chr1_13446188_1aln.mpileup.sinple
+
+
 
 awk  '{A[$2]++}END{for(i in A) {if(A[i]>1) {print i,A[i]}}}' SRR15068323_split_1_22__hg19_145450269split_00000001.se.map.mpileup | sort -k 1,1n -k 2,2n > duplicates20.txt
 awk 'FNR>=5 && FNR<=9' /home/lumar/bioss/test_data/Hsapiens/map/SRR15068323_split_1_22__hg19_145450269split_00000001.se_filt_wline_no_corrected.map
@@ -280,6 +324,7 @@ function process_mutation_indel(seq,gig_elem)
             }
             printf_debug(debug,"%s\t%s%s\t", read_info, gigar_index, strand) 
             base_from_ref = toupper(substr(seq_array[chr], abs_bpos, 1))
+            #print "base_from_ref: "base_from_ref
             printf ("%s\t%s\t%s\t%s\t%s\t%s\t", chr, abs_bpos, base_from_ref, "1", "*", "*")
             print_newline_no_debug(debug)
             print_debug(debug, "read_start: "read_start"; rel_bpos: "rel_bpos"; base_count: "base_count"; m: "m"; del: "del"; ins: "ins"; del_prev: "del_prev"; ins_prev: "ins_prev"; del_cumul: "del_cumul"; ins_cumul: "ins_cumul"; del_cumul_prev: "del_cumul_prev"; ins_cumul_prev: "ins_cumul_prev)
@@ -458,28 +503,43 @@ BEGIN {
     com = "com"
     count_reads=0 # all reads
     num=0
+    fasta_header=""
+    seq=""
     while (getline < ref_genome) { 
         if ($0~"^>"){
+            #print "initial fasta header: "fasta_header
             num++
+            # assign complete sequence to seq_array before reassigning fasta header to new >
+            if (fasta_header!="") {
+                seq_array[fasta_header]=seq
+                #print "seq "num":"$0
+                #print "seq from array: " seq_array[fasta_header]
+                #print "substring test header 1: "substr(fasta_header, 1, 2)
+                #print "substring test for "fasta_header": "substr(seq_array[fasta_header], 12000, 10)
+            }
+           
+            # remove > sign
             #remove trailing whitespace
-            fasta_header=$0
+            fasta_header=$1
+            #print "new fasta header: "fasta_header
             fasta_header=gensub(/>/, "","g",fasta_header)
             fasta_header=gensub(/[ \t]+$/, "","g",fasta_header)
             #print "header no.: "num": "$1
-            
-            # remove > sign
-            #print "fasta header with > removed: "fasta_header
+            #print "new edited fasta header: "fasta_header
+
+            # reset sequence
+            seq=""
         }
         else{
             #print "sequence detected, associated with fasta header: "fasta_header
-            seq_array[fasta_header]=$0
-            #print "seq "num":"$0
-            #print "seq from array: " seq_array[fasta_header]
-            #print "substring test header 1: "substr(fasta_header, 1, 2)
-            #print "substring test seq 1: "substr(seq_array[fasta_header], 12000, 10)
+            seq=seq $0
+
         }
+
     }
-    
+    #add last reference genome chromosome / contig
+    seq_array[fasta_header]=seq
+    #print "substring test for "fasta_header": "substr(seq_array[fasta_header], 12000, 10)
     #for (i in seq_array) print i"\t"seq_array[i]
     #print "substring test 2 header: "substr(fasta_header, 1, 2)
     #print "substring test 2 seq: "substr(seq_array[fasta_header], 12000, 10)
@@ -493,6 +553,9 @@ BEGIN {
     #print count_reads
     if (count_reads >=1 && $5!="-") { # count_reads <=50
     #if ($0~"SRR15068323.9174_") {
+        if (count_reads % 100000) {
+            print "processing "count_reads" reads" > NAME".gempileup.log"
+        }
         seq = $2
         read_len = length($2)
         qual_string = $3

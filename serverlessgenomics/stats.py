@@ -28,9 +28,7 @@ class Stats:
             raise Exception(f'You can not execute this function before "timer_start".')
     
     def store_size_data(self, name_data, size, script=None):
-        if not size.isnumeric():
-             raise Exception(f'The input data is not numeric.')
-        elif script is None: 
+        if script is None: 
                 dictionary = self.__stats
         else:                
             if script not in self.__stats:
@@ -56,7 +54,7 @@ class Stats:
 
             if name_dictio is not None:
                 if name_dictio in dictionary:
-                    raise Exception(f'The key \"{name_data}\" contains data, choose another name or remove the key first.')
+                    raise Exception(f'The key \"{name_dictio}\" contains data, choose another name or remove the key first.')
                 else:
                     dictionary[name_dictio] = dictio
             elif not any(key in self.__stats for key in dictio):

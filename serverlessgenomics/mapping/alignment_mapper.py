@@ -10,6 +10,7 @@ from typing import Tuple
 import pandas as pd
 from numpy import int64
 from pathlib import PurePosixPath
+from time import time
 
 from .data_fetch import fetch_fastq_chunk, fetch_fasta_chunk
 from ..utils import force_delete_local_path
@@ -43,7 +44,8 @@ def gem_indexer_mapper(pipeline_params: PipelineRun,
     Returns:
         Tuple[str]: multiple values needed for index correction and the second map phase
     """
-    stat, transfer_stats = Stats(), Stats()
+    stat, timestamps, data_size = Stats(), Stats(), Stats()
+    timestamps.store_size_data("start", time())
     mapper_id = f'fa{fasta_chunk_id}-fq{fastq_chunk_id}'
     stat.timer_start(mapper_id)
     map_index_key = os.path.join(pipeline_params.tmp_prefix, pipeline_params.run_id, 'gem-mapper',
@@ -70,24 +72,25 @@ def gem_indexer_mapper(pipeline_params: PipelineRun,
 
     try:
         # Get fastq chunk and store it to disk in tmp directory
+        timestamps.store_size_data("download_fastq", time())
         fastq_chunk_filename = f"chunk_{fastq_chunk['chunk_id']}.fastq"
         fastqgz_idx_key, _ = pipeline_params.fastqgz_idx_keys
-        transfer_stats.timer_start("fastq_fetch")
         fetch_fastq_chunk(fastq_chunk, fastq_chunk_filename, storage, pipeline_params.fastq_path,
                           pipeline_params.storage_bucket, fastqgz_idx_key)
-        transfer_stats.timer_stop("fastq_fetch")
+        data_size.store_size_data(fastq_chunk_filename, os.path.getsize(fastq_chunk_filename) / (1024*1024))
 
         # Get fasta chunk and store it to disk in tmp directory
+        timestamps.store_size_data("download_fasta", time())
         fasta_chunk_filename = f"chunk_{fasta_chunk['chunk_id']}.fasta"
-        transfer_stats.timer_start("fasta_fetch")
         fetch_fasta_chunk(fasta_chunk, fasta_chunk_filename, storage, pipeline_params.fasta_path)
-        transfer_stats.timer_stop("fasta_fetch")
+        data_size.store_size_data(fasta_chunk_filename, os.path.getsize(fasta_chunk_filename) / (1024*1024))
 
         # TODO try to move fasta indexing to another preprocessing step
         gem_index_filename = os.path.join(f'{mapper_id}.gem')
         cpus = multiprocessing.cpu_count()
 
         # gem-indexer appends .gem to output file
+        timestamps.store_size_data("gem_indexer", time())
         cmd = ['gem-indexer', '--input', fasta_chunk_filename, '--threads', str(cpus), '-o',
                gem_index_filename.replace('.gem', '')]
         print(' '.join(cmd))
@@ -101,6 +104,7 @@ def gem_indexer_mapper(pipeline_params: PipelineRun,
         # TODO support implement paired-end, replace not-used with 2nd fastq chunk
         # TODO use proper tmp directory instead of uuid base name
         # TODO add support for sra source
+        timestamps.store_size_data("map_index_and_filter_map", time())
         cmd = ['/function/bin/map_index_and_filter_map_file_cmd_awsruntime.sh', gem_index_filename,
                fastq_chunk_filename, "not-used", pipeline_params.base_name, "s3", "single-end"]
         print(' '.join(cmd))
@@ -116,30 +120,36 @@ def gem_indexer_mapper(pipeline_params: PipelineRun,
         shutil.move(pipeline_params.base_name + "_filt_wline_no.map", filtered_map_filename)
 
         # Compress outputs
+        timestamps.store_size_data("compress_index", time())
         zipped_map_index_filename = map_index_filename + ".bz2"
         with zipfile.ZipFile(zipped_map_index_filename, 'w', compression=zipfile.ZIP_BZIP2, compresslevel=9) as zf:
             zf.write(map_index_filename, arcname=PurePosixPath(map_index_filename).name)
 
+        timestamps.store_size_data("compress_map", time())
         zipped_filtered_map_filename = filtered_map_filename + ".bz2"
         with zipfile.ZipFile(zipped_filtered_map_filename, 'w', compression=zipfile.ZIP_BZIP2, compresslevel=9) as zf:
             zf.write(filtered_map_filename, arcname=PurePosixPath(filtered_map_filename).name)
 
         # Copy result files to storage for index correction
-        transfer_stats.timer_start("upload_index")
+        timestamps.store_size_data("upload_index", time())
         storage.upload_file(file_name=zipped_map_index_filename, bucket=pipeline_params.storage_bucket,
                             key=map_index_key)
-        transfer_stats.timer_stop("upload_index")
+        data_size.store_size_data(zipped_map_index_filename, os.path.getsize(zipped_map_index_filename) / (1024*1024))
         
-        transfer_stats.timer_start("upload_map")
+        timestamps.store_size_data("upload_map", time())
         storage.upload_file(file_name=zipped_filtered_map_filename, bucket=pipeline_params.storage_bucket,
                             key=filtered_map_key)
-        transfer_stats.timer_stop("upload_map")
+        data_size.store_size_data(zipped_filtered_map_filename, os.path.getsize(zipped_filtered_map_filename) / (1024*1024))
+        
+        timestamps.store_size_data("end", time())
+        
+        stat.timer_stop(mapper_id)
+        stat.store_dictio(timestamps.get_stats(), "timestamps", mapper_id)
+        stat.store_dictio(data_size.get_stats(), "data_sizes", mapper_id)
+        return (fastq_chunk_id, fasta_chunk_id, map_index_key, filtered_map_key), stat.get_stats()
     finally:
         os.chdir(pwd)
         force_delete_local_path(tmp_dir)
-    stat.timer_stop(mapper_id)
-    stat.store_dictio(transfer_stats.get_stats(), "Data Transfers")
-    return (fastq_chunk_id, fasta_chunk_id, map_index_key, filtered_map_key), stat.get_stats()
 
 
 def index_correction(pipeline_params: PipelineRun, fastq_chunk_id: int, map_index_keys: Tuple[str], storage: Storage):
@@ -155,7 +165,8 @@ def index_correction(pipeline_params: PipelineRun, fastq_chunk_id: int, map_inde
         exec_param (str): string used to differentiate this pipeline execution from others with different parameters
         storage (Storage): s3 storage instance, generated by lithops
     """
-    stat, transfer_stats = Stats(), Stats()
+    stat, timestamps, data_sizes = Stats(), Stats(), Stats()
+    timestamps.store_size_data("start", time())
     set_name = f'fq_{fastq_chunk_id}'
     stat.timer_start(set_name)
     pwd = os.getcwd()
@@ -180,7 +191,7 @@ def index_correction(pipeline_params: PipelineRun, fastq_chunk_id: int, map_inde
     input_temp_dir = tempfile.mkdtemp()
     output_temp_dir = tempfile.mkdtemp()
     try:
-        transfer_stats.timer_start('download_indexes')
+        timestamps.store_size_data("download_indexes", time())
         for i, map_index_key in enumerate(map_index_keys):
             local_compressed_map_path = os.path.join(input_temp_dir, f'map_{i}.map.bz2')
             
@@ -188,16 +199,17 @@ def index_correction(pipeline_params: PipelineRun, fastq_chunk_id: int, map_inde
             
             with zipfile.ZipFile(local_compressed_map_path, 'r', compression=zipfile.ZIP_BZIP2, compresslevel=9) as zf:
                 zf.extractall(input_temp_dir)
+            data_sizes.store_size_data(local_compressed_map_path, os.path.getsize(local_compressed_map_path) / (1024*1024))
             # TODO set proper map index file name
             os.rename(os.path.join(input_temp_dir, f'{pipeline_params.base_name}_map.index.txt'), os.path.join(input_temp_dir, f'{i}_map.index.txt'))
             os.remove(local_compressed_map_path)
-        transfer_stats.timer_stop('download_indexes')
         print(os.listdir(input_temp_dir))
 
         # TODO chdir required or binary_reducer.sh
         os.chdir(output_temp_dir)
 
         # Execute correction scripts
+        timestamps.store_size_data("merge_gem", time())
         intermediate_file = f'{set_name}.intermediate.txt'
         # TODO binary_reducer.sh could be more efficiently implemented using python and consuming files from storage as a generator
         cmd = f'/function/bin/binary_reducer.sh /function/bin/merge_gem_alignment_metrics.sh 4 {input_temp_dir}/* > {intermediate_file}'
@@ -207,6 +219,7 @@ def index_correction(pipeline_params: PipelineRun, fastq_chunk_id: int, map_inde
         print(proc.stderr)
         proc.check_returncode()
 
+        timestamps.store_size_data("filter_merged", time())
         cmd = f'/function/bin/filter_merged_index.sh {intermediate_file} {output_file}'
         print(cmd)
         proc = sp.run(cmd, shell=True, check=True, universal_newlines=True)
@@ -217,17 +230,21 @@ def index_correction(pipeline_params: PipelineRun, fastq_chunk_id: int, map_inde
         print(os.listdir())
 
         # Compress output
+        timestamps.store_size_data("compress_corrected_index", time())
         with zipfile.ZipFile(zipped_output_file, 'w', compression=zipfile.ZIP_BZIP2, compresslevel=9) as zf:
             zf.write(output_file, arcname=output_file)
 
         # Upload corrected index to storage
-        transfer_stats.timer_start("upload_corrected_index")
+        timestamps.store_size_data("upload_corrected_index", time())
         storage.upload_file(bucket=pipeline_params.storage_bucket, key=corrected_index_key, file_name=zipped_output_file)
-        transfer_stats.timer_stop("upload_corrected_index")
+        data_sizes.store_size_data(zipped_output_file, os.path.getsize(zipped_output_file) / (1024*1024))
+        
+        timestamps.store_size_data("end", time())
         
         os.chdir(pwd)
         stat.timer_stop(set_name)
-        stat.store_dictio(transfer_stats.get_stats(), "Data Transfers")
+        stat.store_dictio(timestamps.get_stats(), "timestamps", set_name)
+        stat.store_dictio(data_sizes.get_stats(), "data_sizes", set_name)
         return (fastq_chunk_id, corrected_index_key), stat.get_stats()
     finally:
         os.chdir(pwd)
@@ -253,7 +270,8 @@ def filter_index_to_mpileup(pipeline_params: PipelineRun, fasta_chunk_id: int, f
     Returns:
         Tuple[str]: keys to the generated txt and csv/parquet files (stored in s3)
     """    
-    stat, transfer_stats = Stats(), Stats()
+    stat, timestamps, data_sizes = Stats(), Stats(), Stats()
+    timestamps.store_size_data("start", time())
     stat.timer_start(f'{pipeline_params.base_name}_fa{fasta_chunk_id}-fq{fastq_chunk_id}')
     temp_dir = tempfile.mkdtemp()
     pwd = os.getcwd()
@@ -279,17 +297,17 @@ def filter_index_to_mpileup(pipeline_params: PipelineRun, fasta_chunk_id: int, f
         os.chdir(temp_dir)
 
         # Recover fasta chunk
+        timestamps.store_size_data("download_fasta_chunk", time())
         fasta_chunk_filename = f"chunk_{fasta_chunk['chunk_id']}.fasta"
-        transfer_stats.timer_start("download_fasta_chunk")
         fetch_fasta_chunk(fasta_chunk, fasta_chunk_filename, storage, pipeline_params.fasta_path)
-        transfer_stats.timer_stop("download_fasta_chunk")
+        data_sizes.store_size_data(fasta_chunk_filename, os.path.getsize(fasta_chunk_filename) / (1024*1024))
 
         # Recover filtered map file
+        timestamps.store_size_data("download_map_file", time())
         bz2_filt_map_filename = pathlib.PurePosixPath(filtered_map_key).name
-        transfer_stats.timer_start("download_map")
         storage.download_file(bucket=pipeline_params.storage_bucket, key=filtered_map_key,
                               file_name=bz2_filt_map_filename)
-        transfer_stats.timer_stop("download_map")
+        data_sizes.store_size_data(bz2_filt_map_filename, os.path.getsize(bz2_filt_map_filename) / (1024*1024))
         with zipfile.ZipFile(bz2_filt_map_filename, 'r', compression=zipfile.ZIP_BZIP2, compresslevel=9) as zf:
             zf.extractall()
         os.remove(bz2_filt_map_filename)
@@ -299,10 +317,10 @@ def filter_index_to_mpileup(pipeline_params: PipelineRun, fasta_chunk_id: int, f
             bz2_corrected_index_filename = pathlib.PurePosixPath(corrected_index_key).name
         except:
             raise ValueError(corrected_index_key)
-        transfer_stats.timer_start("download_corrected_index")
+        timestamps.store_size_data("download_index", time())
         storage.download_file(bucket=pipeline_params.storage_bucket, key=corrected_index_key,
                               file_name=bz2_corrected_index_filename)
-        transfer_stats.timer_stop("download_corrected_index")
+        data_sizes.store_size_data(bz2_corrected_index_filename, os.path.getsize(bz2_corrected_index_filename) / (1024*1024))
         with zipfile.ZipFile(bz2_corrected_index_filename, 'r', compression=zipfile.ZIP_BZIP2, compresslevel=9) as zf:
             zf.extractall()
         os.remove(bz2_corrected_index_filename)
@@ -310,6 +328,7 @@ def filter_index_to_mpileup(pipeline_params: PipelineRun, fasta_chunk_id: int, f
         print(os.listdir(temp_dir))
 
         # Filter aligments with corrected map file
+        timestamps.store_size_data("map_file_index_correction", time())
         filt_map_filename = f'{pipeline_params.base_name}_fa{fasta_chunk_id}-fq{fastq_chunk_id}_filt_wline_no.map'
         # TODO replace with a proper file name (maybe indicating fastq chunk id)
         corrected_index_filename = 'merged_filtered_index.txt'
@@ -324,6 +343,7 @@ def filter_index_to_mpileup(pipeline_params: PipelineRun, fasta_chunk_id: int, f
         print(os.listdir(temp_dir))
 
         # Generate mpileup
+        timestamps.store_size_data("gempileup_run", time())
         cmd = ['/function/bin/gempileup_run.sh', corrected_map_file, fasta_chunk_filename]
         print(' '.join(cmd))
         proc = sp.run(cmd, capture_output=True)
@@ -331,14 +351,17 @@ def filter_index_to_mpileup(pipeline_params: PipelineRun, fasta_chunk_id: int, f
         print(proc.stderr.decode('utf-8'))
 
         # Store output to storage
+        timestamps.store_size_data("upload_mpileup", time())
         mpipleup_key = os.path.join(pipeline_params.tmp_prefix, pipeline_params.run_id, 'mpileups',
                                     f'fq{fastq_chunk_id}', f'fa{fasta_chunk_id}', mpileup_file)
-        transfer_stats.timer_start("upload_mpileup")
         storage.upload_file(bucket=pipeline_params.storage_bucket, key=mpipleup_key, file_name=f'{corrected_map_file}.mpileup')
-        transfer_stats.timer_stop("upload_mpileup")
+        data_sizes.store_size_data(f'{corrected_map_file}.mpileup', os.path.getsize(f'{corrected_map_file}.mpileup') / (1024*1024))
+        
+        timestamps.store_size_data("end", time())
         
         stat.timer_stop(f'{pipeline_params.base_name}_fa{fasta_chunk_id}-fq{fastq_chunk_id}')
-        stat.store_dictio(transfer_stats.get_stats(), "Data Transfers")
+        stat.store_dictio(timestamps.get_stats(), "timestamps", f'{pipeline_params.base_name}_fa{fasta_chunk_id}-fq{fastq_chunk_id}')
+        stat.store_dictio(data_sizes.get_stats(), "data_sizes", f'{pipeline_params.base_name}_fa{fasta_chunk_id}-fq{fastq_chunk_id}')
         return mpipleup_key, stat.get_stats()
 
     finally:
