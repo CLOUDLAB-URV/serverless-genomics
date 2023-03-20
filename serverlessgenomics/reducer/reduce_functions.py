@@ -50,7 +50,7 @@ def reduce_function(keys, range, mpu_id, n_part, mpu_key, pipeline_params: Pipel
 
     # Execute the script to merge and reduce
     p = Popen(['bash', 
-               '/function/bin/mpileup_merge_reducev4_nosinple.sh',
+               '/function/bin/mpileup_merge_reducev3.sh',
                '/function/bin/',
                '75%'], stdout=PIPE, stdin=PIPE, stderr=PIPE)
     sinple_out = p.communicate(input=mpileup_data)[0]
