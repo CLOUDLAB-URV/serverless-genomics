@@ -14,10 +14,11 @@ def generate_gem_indexer_mapper_iterdata(pipeline_params: PipelineRun, fasta_chu
     for fq_i, fq_ch in enumerate(fastq_chunks):
         if (pipeline_params.fastq_chunk_range is None) or (fq_i in pipeline_params.fastq_chunk_range):
             for fa_i, fa_ch in enumerate(fasta_chunks):
-                params = {'pipeline_params': pipeline_params,
-                        'fasta_chunk_id': fa_i, 'fasta_chunk': fa_ch,
-                        'fastq_chunk': fq_ch, 'fastq_chunk_id': fq_i}
-                iterdata.append(params)
+                if (pipeline_params.fasta_chunk_range is None) or (fa_i in pipeline_params.fasta_chunk_range):
+                    params = {'pipeline_params': pipeline_params,
+                            'fasta_chunk_id': fa_i, 'fasta_chunk': fa_ch,
+                            'fastq_chunk': fq_ch, 'fastq_chunk_id': fq_i}
+                    iterdata.append(params)
     return iterdata
 
 

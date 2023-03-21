@@ -285,7 +285,8 @@ def create_multipart_keys(pipeline_params: PipelineRun) -> Tuple[str]:
     """
     keys = []
     for i in range(pipeline_params.fasta_chunks):
-        keys.append(f'tmp/{pipeline_params.run_id}/multipart_uploads/fa{i}.sinple')
+        if (pipeline_params.fasta_chunk_range is None) or (i in pipeline_params.fasta_chunk_range):
+            keys.append(f'tmp/{pipeline_params.run_id}/multipart_uploads/fa{i}.sinple')
     return keys
 
 
