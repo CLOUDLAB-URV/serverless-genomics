@@ -82,7 +82,7 @@ def run_reducer(pipeline_params: PipelineRun, lithops: Lithops, mapper_output):
     distributed_indexes = lithops.map(distribute_indexes, indexes_iterdata).get_result()
     subStat.timer_stop('distribute_indexes')
     distributed_indexes, timers = split_data_result(distributed_indexes)
-    subStat.store_dictio(timers, "phases", "distribute_indexes")
+    subStat.store_dictio(timers, "function_details", "distribute_indexes")
         
     
     # 5 Launch the reducers
@@ -92,7 +92,7 @@ def run_reducer(pipeline_params: PipelineRun, lithops: Lithops, mapper_output):
     reducer_output = lithops.map(reduce_function, reducer_iterdata).get_result()
     subStat.timer_stop('reduce_function')
     reducer_output, timers = split_data_result(reducer_output)
-    subStat.store_dictio(timers, "phases", "reduce_function")
+    subStat.store_dictio(timers, "function_details", "reduce_function")
     
     # 6 Complete the multipart uploads that the reducers created
     complete_multipart(multipart_keys, multipart_ids, reducer_output, pipeline_params, lithops.storage.storage_handler.s3_client)
@@ -122,7 +122,7 @@ def run_reducer(pipeline_params: PipelineRun, lithops: Lithops, mapper_output):
     final_merge_results = lithops.map(final_merge, merge_iterdata).get_result()
     subStat.timer_stop('final_merge')
     final_merge_results, timers = split_data_result(final_merge_results)
-    subStat.store_dictio(timers, "phases", "final_merge")
+    subStat.store_dictio(timers, "function_details", "final_merge")
        
 
     # 8 Complete the previous multipart upload

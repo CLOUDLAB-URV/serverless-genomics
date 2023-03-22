@@ -1,223 +1,248 @@
 import json
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas
+import os
 
 def fetch_general_data(data, dict_data):
-    #General data
     dict_data['pipeline_total_time'] = data['pipeline']['execution_time']
     dict_data['preprocessing_total_time'] = data['pipeline']['preprocess_phase']['preprocess']['execution_time']
     dict_data['map_total_time'] = data['pipeline']['alignReads_phase']['align_reads']['execution_time']
     dict_data['reduce_total_time'] = data['pipeline']['reduce_phase']['reduce']['execution_time']
     return dict_data
 
-def fetch_map_data(data, dict_data):
-    #Map: Stage 1 Info
-    exec_times = []
-    data_transfers = []
-    for result in data['pipeline']['alignReads_phase']['align_reads']['subprocesses']['gem_indexer_mapper']['subprocesses']:
-        keys = list(result.keys())
-        exec_times.append(result[keys[0]]['execution_time'])
-        data_transfers.append(result[keys[1]])
-    dict_data['map1_time'] = np.average(exec_times)
+
+def plot_map_one(data: dict):
+    function_details = data['pipeline']['alignReads_phase']['align_reads']['phases']['gem_indexer_mapper']['function_details']
     
-    fastq_fetch = []
-    fasta_fetch = []
+    i = 0
+    download_fastq = []
+    download_fasta = []
+    gem_indexer = []
+    map_index_and_filter_map = []
+    compress_index = []
+    compress_map = []
     upload_index = []
     upload_map = []
-    for datat in data_transfers:
-        fastq_fetch.append(datat['fastq_fetch']['execution_time'])
-        fasta_fetch.append(datat['fasta_fetch']['execution_time'])
-        upload_index.append(datat['upload_index']['execution_time'])
-        upload_map.append(datat['upload_map']['execution_time'])
-    dict_data["map1_fastq_fetch"] = np.average(fastq_fetch)
-    dict_data["map1_fasta_fetch"] = np.average(fasta_fetch)
-    dict_data["map1_upload_index"] = np.average(upload_index)
-    dict_data["map1_upload_map"] = np.average(upload_map)
+    end = []
     
+    for elem in function_details:
+        keys = elem.keys()
+        for k in keys:
+            timestamps = elem[k]['timestamps']
+            start = timestamps['start']
+            download_fastq.append(timestamps['download_fastq'] - start)
+            download_fasta.append(timestamps['download_fasta'] - timestamps['download_fastq'])
+            gem_indexer.append(timestamps['gem_indexer'] - timestamps['download_fasta'])
+            map_index_and_filter_map.append(timestamps['map_index_and_filter_map'] - timestamps['gem_indexer'])
+            compress_index.append(timestamps['compress_index'] - timestamps['map_index_and_filter_map'])
+            compress_map.append(timestamps['compress_map'] - timestamps['compress_index'])
+            upload_index.append(timestamps['upload_index'] - timestamps['compress_map'])
+            upload_map.append(timestamps['upload_map'] - timestamps['upload_index'])
+            end.append(timestamps['end'] - timestamps['upload_map'])
+        i += 1
+            
+    df = pandas.DataFrame({
+        'download_fastq': download_fasta,
+        'download_fasta': gem_indexer,
+        'gem_indexer': map_index_and_filter_map,
+        'map_index_and_filter_map': compress_index,
+        'compress_index': compress_map,
+        'compress_map': upload_index,
+        'upload_index': upload_map,
+        'upload_map': end
+    })
     
-    #Map: Index Correction Info
-    exec_times = []
-    data_transfers = []
-    for result in data['pipeline']['alignReads_phase']['align_reads']['subprocesses']['index_correction']['subprocesses']:
-        keys = list(result.keys())
-        exec_times.append(result[keys[0]]['execution_time'])
-        data_transfers.append(result[keys[1]])
-    dict_data['index_correction_time'] = np.average(exec_times)
+    ax = df.plot.barh(stacked=True, title='Map Phase One')
+    ax.legend(bbox_to_anchor=(1.01, 1), loc='upper left', borderaxespad=0.)
     
-    download_indexes = []
-    upload_corrected_index = []
-    for datat in data_transfers:
-        download_indexes.append(datat['download_indexes']['execution_time'])
-        upload_corrected_index.append(datat['upload_corrected_index']['execution_time'])
-    dict_data["download_indexes"] = np.average(download_indexes)
-    dict_data["upload_corrected_index"] = np.average(upload_corrected_index)
+    ax.set_yticks([0, i])
+    ax.set_yticklabels([0, i])
     
+    ax.set_xlabel("time in seconds")
+    ax.set_ylabel("functions")
     
-    #Map: Stage 2 Info
-    exec_times = []
-    data_transfers = []
-    for result in data['pipeline']['alignReads_phase']['align_reads']['subprocesses']['filter_index_to_mpileup']['subprocesses']:
-        keys = list(result.keys())
-        exec_times.append(result[keys[0]]['execution_time'])
-        data_transfers.append(result[keys[1]])
-    dict_data['map2_time'] = np.average(exec_times)
+    fig = ax.get_figure()
+    fig.savefig("./stats/map_phase_one.png", bbox_inches='tight', dpi=400)
+
+
+def plot_map_two(data: dict):
+    function_details = data['pipeline']['alignReads_phase']['align_reads']['phases']['filter_index_to_mpileup']['function_details']
     
+    i = 0
     download_fasta_chunk = []
-    download_map = []
-    download_corrected_index = []
+    download_map_file = []
+    download_index = []
+    map_file_index_correction = []
+    gempileup_run = []
     upload_mpileup = []
-    for datat in data_transfers:
-        download_fasta_chunk.append(datat['download_fasta_chunk']['execution_time'])
-        download_map.append(datat['download_map']['execution_time'])
-        download_corrected_index.append(datat['download_corrected_index']['execution_time'])
-        upload_mpileup.append(datat['upload_mpileup']['execution_time'])
-    dict_data["map2_download_fasta_chunk"] = np.average(download_fasta_chunk)
-    dict_data["map2_download_map"] = np.average(download_map)
-    dict_data["map2_download_corrected_index"] = np.average(download_corrected_index)
-    dict_data["map2_upload_mpileup"] = np.average(upload_mpileup)
-
-    return dict_data
-
-
-def fetch_reduce_data(data, dict_data):
-    #Distribute indexes
-    exec_times = []
-    data_transfers = []
-    for result in data['pipeline']['reduce_phase']['reduce']['subprocesses']['distribute_indexes']['subprocesses']:
-        keys = list(result.keys())
-        exec_times.append(result[keys[0]]['execution_time'])
-        data_transfers.append(result[keys[1]]['s3_select']['execution_time'])
-    dict_data['distribute_indexes_time'] = np.average(exec_times)
-    dict_data["distribute_indexes_select"] = np.average(data_transfers)
+    end = []
     
+    for elem in function_details:
+        keys = elem.keys()
+        for k in keys:
+            timestamps = elem[k]['timestamps']
+            start = timestamps['start']
+            download_fasta_chunk.append(timestamps['download_fasta_chunk'] - start)
+            download_map_file.append(timestamps['download_map_file'] - timestamps['download_fasta_chunk'])
+            download_index.append(timestamps['download_index'] - timestamps['download_map_file'])
+            map_file_index_correction.append(timestamps['map_file_index_correction'] - timestamps['download_index'])
+            gempileup_run.append(timestamps['gempileup_run'] - timestamps['map_file_index_correction'])
+            upload_mpileup.append(timestamps['upload_mpileup'] - timestamps['gempileup_run'])
+            end.append(timestamps['end'] - timestamps['upload_mpileup'])
+        i += 1
+            
+    df = pandas.DataFrame({
+        'download_fasta_chunk': download_map_file,
+        'download_map_file': download_map_file,
+        'download_map_file': download_index,
+        'download_index': map_file_index_correction,
+        'map_file_index_correction': gempileup_run,
+        'gempileup_run': upload_mpileup,
+        'upload_mpileup': end
+    })
     
-    #Reduce function
-    exec_times = []
-    data_transfers = []
-    for result in data['pipeline']['reduce_phase']['reduce']['subprocesses']['reduce_function']['subprocesses']:
-        keys = list(result.keys())
-        exec_times.append(result[keys[0]]['execution_time'])
-        data_transfers.append(result[keys[1]])
-    dict_data['reduce_function_time'] = np.average(exec_times)
+    ax = df.plot.barh(stacked=True, title='Map Phase Two')
+    ax.legend(bbox_to_anchor=(1.01, 1), loc='upper left', borderaxespad=0.)
     
-    s3_select = []
+    ax.set_yticks([0, i])
+    ax.set_yticklabels([0, i])
+    
+    ax.set_xlabel("time in seconds")
+    ax.set_ylabel("functions")
+    
+    fig = ax.get_figure()
+    fig.savefig("./stats/map_phase_two.png", bbox_inches='tight', dpi=400)
+
+
+def plot_index_correction(data: dict):
+    function_details = data['pipeline']['alignReads_phase']['align_reads']['phases']['index_correction']['function_details']
+    
+    i = 0
+    download_indexes = []
+    merge_gem = []
+    filter_merged = []
+    compress_corrected_index = []
+    upload_corrected_index = []
+    end = []
+    
+    for elem in function_details:
+        keys = elem.keys()
+        for k in keys:
+            timestamps = elem[k]['timestamps']
+            start = timestamps['start']
+            download_indexes.append(timestamps['download_indexes'] - start)
+            merge_gem.append(timestamps['merge_gem'] - timestamps['download_indexes'])
+            filter_merged.append(timestamps['filter_merged'] - timestamps['merge_gem'])
+            compress_corrected_index.append(timestamps['compress_corrected_index'] - timestamps['filter_merged'])
+            upload_corrected_index.append(timestamps['upload_corrected_index'] - timestamps['compress_corrected_index'])
+            end.append(timestamps['end'] - timestamps['upload_corrected_index'])
+        i += 1
+            
+    df = pandas.DataFrame({
+        'download_indexes': merge_gem,
+        'merge_gem': filter_merged,
+        'filter_merged': compress_corrected_index,
+        'compress_corrected_index': upload_corrected_index,
+        'upload_corrected_index': end
+    })
+    
+    ax = df.plot.barh(stacked=True, title='Index Correction')
+    ax.legend(bbox_to_anchor=(1.01, 1), loc='upper left', borderaxespad=0.)
+    
+    ax.set_yticks([0, i])
+    ax.set_yticklabels([0, i])
+    
+    ax.set_xlabel("time in seconds")
+    ax.set_ylabel("functions")
+    
+    fig = ax.get_figure()
+    fig.savefig("./stats/index_correction.png", bbox_inches='tight', dpi=400)
+    
+
+def plot_distribute_indexes(data: dict):
+    function_details = data['pipeline']['reduce_phase']['reduce']['phases']['distribute_indexes']['function_details']
+    
+    i = 0
+    s3_queries = []
+    distribute_indexes = []
+    end = []
+    
+    for elem in function_details:
+        k = list(elem.keys())[0]
+        timestamps = elem[k]['timestamps']
+        start = timestamps['start']
+        s3_queries.append(timestamps['s3_queries'] - start)
+        distribute_indexes.append(timestamps['distribute_indexes'] - timestamps['s3_queries'])
+        end.append(timestamps['end'] - timestamps['distribute_indexes'])
+        i += 1
+            
+    df = pandas.DataFrame({
+        's3_queries': distribute_indexes,
+        'distribute_indexes': end
+    })
+    
+    ax = df.plot.barh(stacked=True, title='Distribute Indexes')
+    ax.legend(bbox_to_anchor=(1.01, 1), loc='upper left', borderaxespad=0.)
+    
+    ax.set_yticks([0, i])
+    ax.set_yticklabels([0, i])
+    
+    ax.set_xlabel("time in seconds")
+    ax.set_ylabel("functions")
+    
+    fig = ax.get_figure()
+    fig.savefig("./stats/distribute_indexes.png", bbox_inches='tight', dpi=400)
+
+
+def plot_reduce(data: dict):
+    function_details = data['pipeline']['reduce_phase']['reduce']['phases']['reduce_function']['function_details']
+    
+    i = 0
+    s3_queries = []
+    mpileup_merge_reduce = []
     upload_part = []
-    for datat in data_transfers:
-        s3_select.append(datat['s3_select']['execution_time'])
-        upload_part.append(datat['upload_part']['execution_time'])
-    dict_data["reduce_func_select"] = np.average(s3_select)
-    dict_data["reduce_func_upload"] = np.average(upload_part)
+    end = []
     
+    for elem in function_details:
+        keys = elem.keys()
+        for k in keys:
+            timestamps = elem[k]['timestamps']
+            start = timestamps['start']
+            s3_queries.append(timestamps['s3_queries'] - start)
+            mpileup_merge_reduce.append(timestamps['mpileup_merge_reduce'] - timestamps['s3_queries'])
+            upload_part.append(timestamps['upload_part'] - timestamps['mpileup_merge_reduce'])
+            end.append(timestamps['end'] - timestamps['upload_part'])
+        i += 1
+            
+    df = pandas.DataFrame({
+        's3_queries': mpileup_merge_reduce,
+        'mpileup_merge_reduce': upload_part,
+        'upload_part': end
+    })
     
-    #Final merge
-    download_part = []
-    upload_part = []
-    for result in data['pipeline']['reduce_phase']['reduce']['subprocesses']['final_merge']['subprocesses']:
-        keys = list(result.keys())
-        download_part.append(result[keys[0]]['execution_time'])
-        upload_part.append(result[keys[1]]['execution_time'])
-    dict_data['final_merge_download'] = np.average(download_part)
-    dict_data['final_merge_upload'] = np.average(upload_part)
-    dict_data['final_merge_total'] = dict_data['final_merge_download'] + dict_data['final_merge_upload']
+    ax = df.plot.barh(stacked=True, title='Reduce Function')
+    ax.legend(bbox_to_anchor=(1.01, 1), loc='upper left', borderaxespad=0.)
     
-    return dict_data
-
-
-def f2(num):
-    return f"{num:.2f}"
-
-
-def display_general(dict_data):
-    print("***GENERAL INFORMATION***")
-    print("Pipeline execution time: " + f2(dict_data['pipeline_total_time']) + "s")
-    print("Map execution time: " + f2(dict_data['preprocessing_total_time']) + "s")
-    print("Reduce execution time: " + f2(dict_data['reduce_total_time']) + "s")
-    print("")
+    ax.set_yticks([0, i])
+    ax.set_yticklabels([0, i])
     
-
-def display_map(dict_data):
-    print("**MAP PHASE**")
-    print("*MAP STAGE 1")
-    print("Average time: " + f2(dict_data['map1_time']) + "s")
-    total_time = float(dict_data['map1_fastq_fetch']) + float(dict_data['map1_fasta_fetch'])
-    perc = f2(total_time / dict_data['map1_time'] * 100)
-    print("Download time: " + f2(total_time) + "s")
-    print("Download time percentage: " + perc + "%")
-    total_time = float(dict_data['map1_upload_index']) + float(dict_data['map1_upload_map'])
-    perc = f2(total_time / dict_data['map1_time'] * 100)
-    print("Upload time: " + str(f2(total_time)) + "s")
-    print("Upload time percentage: " + perc + "%")
-    print("")
+    ax.set_xlabel("time in seconds")
+    ax.set_ylabel("functions")
     
-    print("*INDEX CORRECTION*")
-    print("Average time: " + f2(dict_data['index_correction_time']) + "s")
-    print("Download time: " + f2(dict_data['download_indexes']) + "s")
-    perc = float(dict_data['download_indexes']) / float(dict_data['index_correction_time']) * 100
-    print("Download time percentage: " + f2(perc) + "%")
-    print("Upload time: " + f2(dict_data['upload_corrected_index']) + "s")
-    perc = float(dict_data['upload_corrected_index']) / float(dict_data['index_correction_time']) * 100
-    print("Upload time percentage: " + f2(perc) + "%")
-    print("")
-    
-    print("*MAP STAGE 2*")
-    print("Average time: " + f2(dict_data['map2_time']) + "s")
-    total_time = float(dict_data['map2_download_fasta_chunk']) + float(dict_data['map2_download_map']) + float(dict_data['map2_download_corrected_index'])
-    perc = total_time / dict_data['map2_time'] * 100
-    print("Download time: " + f2(total_time) + "s")
-    print("Download time percentage: " + f2(perc) + "%")
-    print("Upload time: " + f2(dict_data['map2_upload_mpileup']))
-    perc = float(dict_data['map2_upload_mpileup']) / float(dict_data['map2_time']) * 100
-    print("Upload time percentage: " + f2(perc) + "%")
-    print("")
-
-
-def display_reduce(dict_data):
-    print("**REDUCE PHASE**")
-    print("*DISTRIBUTE INDEXES*")
-    print("Average time: " + f2(dict_data['distribute_indexes_time']) + "s")
-    print("S3 Select time: " + f2(dict_data['distribute_indexes_select']) + "s")
-    perc = float(dict_data['distribute_indexes_select']) / dict_data['distribute_indexes_time'] * 100
-    print("S3 Select time percentage: " + f2(perc) + "%")
-    print("")
-    
-    print("*REDUCE*")
-    print("Average time: " + f2(dict_data['reduce_function_time']) + "s")
-    print("S3 SELECT time: " + f2(dict_data['reduce_func_select']) + "s")
-    perc = float(dict_data['reduce_func_select']) / dict_data['reduce_function_time'] * 100
-    print("S3 SELECT time percentage: " + f2(perc) + "%")
-    print("Upload time: " + f2(dict_data['reduce_func_upload']) + "s")
-    perc = float(dict_data['reduce_func_upload']) / dict_data['reduce_function_time'] * 100
-    print("Upload time percentage: " + f2(perc) + "%")
-    print("")
-    
-    print("*FINAL MERGE*")
-    print("Average time: " + f2(dict_data['final_merge_total']) + "s")
-    print("Download time: " + f2(dict_data['final_merge_download']) + "s")
-    perc = float(dict_data['final_merge_download']) / dict_data['final_merge_total'] * 100
-    print("Download time percentage: " + f2(perc) + "%")
-    print("Upload time: " + f2(dict_data['final_merge_upload']) + "s")
-    perc = float(dict_data['final_merge_upload']) / dict_data['final_merge_total'] * 100
-    print("Upload time percentage: " + f2(perc) + "%")
-    print("")
-    
-    
-def display_all(dict_data):
-    display_general(dict_data)
-    display_map(dict_data)
-    display_reduce(dict_data)
- 
-
-def plot():
-    with open("stats/logs_stats.json") as json_read:
-        data: dict = json.load(json_read)
-    
-    dict_data={}
-    dict_data = fetch_general_data(data, dict_data)
-    dict_data = fetch_map_data(data, dict_data)
-    dict_data = fetch_reduce_data(data, dict_data)
-    
-    display_all(dict_data)
+    fig = ax.get_figure()
+    fig.savefig("./stats/reduce_functions.png", bbox_inches='tight', dpi=400)
 
 
 if __name__ == '__main__':
-    plot()
+    with open("/home/agabriel/Downloads/logs_stats.json") as json_read:
+        data: dict = json.load(json_read)
+    
+    if not os.path.exists('stats'):
+        os.makedirs('stats')
+    
+    plot_map_one(data)
+    plot_map_two(data)
+    plot_index_correction(data)
+    plot_distribute_indexes(data)
+    plot_reduce(data)
