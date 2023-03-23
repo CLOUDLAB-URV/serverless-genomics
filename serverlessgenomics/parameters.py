@@ -33,6 +33,8 @@ class PipelineRun:
     tolerance: int = 0
     # fastq chunks to be processed
     fastq_chunk_range: range = None
+    # fasta chunks to be processed
+    fasta_chunk_range: range = None
     # FASTQ base name
     base_name: str = "SRRXXXXXX"
     # Skip PreProcessing Stage
