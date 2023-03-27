@@ -234,6 +234,254 @@ def plot_reduce(data: dict):
     fig.savefig("./stats/reduce_functions.png", bbox_inches='tight', dpi=400)
 
 
+def plot_data_transfers(data, average=False):
+    #ALIGN READS
+    align_reads = data['pipeline']['alignReads_phase']['align_reads']['phases']['gem_indexer_mapper']['function_details']
+    
+    align_reads_download = 0
+    align_reads_upload = 0
+    for func in align_reads:
+        k = list(func)[0]
+        func = func[k]['data_sizes']
+        keys = list(func)
+        align_reads_download += func[keys[0]] + func[keys[1]]
+        align_reads_upload += func[keys[2]] + func[keys[3]]
+    if average:
+        align_reads_download /= len(align_reads)
+        align_reads_upload /= len(align_reads)
+        
+    
+    #INDEX CORRECTION
+    index_correction = data['pipeline']['alignReads_phase']['align_reads']['phases']['index_correction']['function_details']
+    
+    index_correction_downloads = 0
+    index_correction_uploads = 0
+    for func in index_correction:
+        k = list(func)[0]
+        func = func[k]['data_sizes']
+        keys = list(func)
+        last_k = keys.pop()
+        for elem in keys:
+            index_correction_downloads += func[elem]
+        index_correction_uploads += func[last_k]
+    if average:
+        index_correction_downloads /= len(index_correction)
+        index_correction_uploads /= len(index_correction)
+    
+    
+    #MAP PHASE 2
+    map_two = data['pipeline']['alignReads_phase']['align_reads']['phases']['filter_index_to_mpileup']['function_details']
+    
+    map_two_downloads = 0
+    map_two_uploads = 0
+    for func in map_two:
+        k = list(func)[0]
+        func = func[k]['data_sizes']
+        keys = list(func)
+        last_k = keys.pop()
+        for elem in keys:
+            map_two_downloads += func[elem]
+        map_two_uploads += func[last_k]
+    if average:
+        map_two_downloads /= len(map_two)
+        map_two_uploads /= len(map_two)
+    
+    #DISTRIBUTE INDEXES
+    dist_indexes = data['pipeline']['reduce_phase']['reduce']['phases']['distribute_indexes']['function_details']
+    
+    dist_indexes_downloads = 0
+    for func in dist_indexes:
+        k = list(func)[0]
+        func = func[k]['data_sizes']
+        keys = list(func)
+        first_k = keys.pop(0)
+        dist_indexes_downloads += func[first_k]
+    if average:
+        dist_indexes_downloads /= len(dist_indexes)
+    
+    #REDUCE
+    reduce = data['pipeline']['reduce_phase']['reduce']['phases']['reduce_function']['function_details']
+    
+    reduce_download = 0
+    reduce_upload = 0
+    for func in reduce:
+        k = list(func)[0]
+        func = func[k]['data_sizes']
+        keys = list(func)
+        reduce_download += func[keys[0]]
+        reduce_upload += func[keys[1]]
+    if average:
+        reduce_download /= len(reduce)
+        reduce_upload /= len(reduce)
+    
+    #PLOTS
+    categories = ['Map One', 'Index Correction', 'Map Two', 'Dist. Indexes', 'Reduce']
+    downloads = [align_reads_download, index_correction_downloads, map_two_downloads, dist_indexes_downloads, reduce_download]
+    uploads = [align_reads_upload, index_correction_uploads, map_two_uploads, 0, reduce_upload]
+
+    # Positions of bars on y-axis
+    y_pos = np.arange(len(categories))
+
+    # Width of bars
+    bar_width = 0.1
+
+    # Plotting the bars
+    fig, ax = plt.subplots()
+    ax.bar(y_pos - bar_width/2, downloads, width=bar_width, align='center', color='red', label='Downloads')
+    ax.bar(y_pos + bar_width/2, uploads, width=bar_width, align='center', color='blue', label='Uploads')
+
+    # Adding labels, title, and legend
+    ax.set_xticks(y_pos)
+    ax.set_xticklabels(categories)
+    ax.set_ylabel('Data in MB')
+    if average:
+        ax.set_title('Average Data Transfers for one function')
+    else:
+        ax.set_title('Total Data Transfers')
+    #ax.invert_xaxis()
+    ax.legend(bbox_to_anchor=(1.01, 1), loc='upper left', borderaxespad=0.)
+
+    fig = ax.get_figure()
+    if average:
+        fig.savefig("./stats/data_transfers_average.png", bbox_inches='tight', dpi=400)
+    else:
+        fig.savefig("./stats/data_transfers_total.png", bbox_inches='tight', dpi=400)
+
+    return downloads, uploads
+
+
+def display_data_transfer_values(downloads, uploads, average=False):
+    if average:
+        print("Average Data Transfers for one function")
+    else:
+        print("Total Data Transfers")
+    
+    print("Map Phase One: {:.2f}MB downloaded, {:.2f}MB uploaded. Generated data is {:.2f}% of the downloaded data.".format(downloads[0], uploads[0], (uploads[0]/downloads[0]*100)))
+    print("Index Correction: {:.2f}MB downloaded, {:.2f}MB uploaded. Generated data is {:.2f}% of the downloaded data.".format(downloads[1], uploads[1], (uploads[1]/downloads[1]*100)))
+    print("Map Phase Two: {:.2f}MB downloaded, {:.2f}MB uploaded. Generated data is {:.2f}% of the downloaded data.".format(downloads[2], uploads[2], (uploads[2]/downloads[2]*100)))
+    print("Distribute Indexes: {:.2f}MB downloaded. No data is uploaded".format(downloads[3]))
+    print("Reduce Function: {:.2f}MB downloaded, {:.2f}MB uploaded. Generated data is {:.2f}% of the downloaded data.".format(downloads[4], uploads[4], (uploads[4]/downloads[4]*100)))
+
+
+def plot_stages(data):
+    #Fetch times
+    fastq_preprocessing = data['pipeline']['preprocess_phase']['preprocess']['subprocesses_fastq']['get_data_frame_parquet']['execution_time'] \
+        + data['pipeline']['preprocess_phase']['preprocess']['subprocesses_fastq']['prepare_fastq_chunks']['execution_time']
+    fasta_preprocessing = data['pipeline']['preprocess_phase']['preprocess']['subprocesses_fasta']['prepare_fasta_chunks']['execution_time']
+    
+    map_one = data['pipeline']['alignReads_phase']['align_reads']['phases']['gem_indexer_mapper']['execution_time']
+    index_correction = data['pipeline']['alignReads_phase']['align_reads']['phases']['index_correction']['execution_time']
+    map_two = data['pipeline']['alignReads_phase']['align_reads']['phases']['filter_index_to_mpileup']['execution_time']
+    
+    dist_indexes = data['pipeline']['reduce_phase']['reduce']['phases']['distribute_indexes']['execution_time']
+    reduce = data['pipeline']['reduce_phase']['reduce']['phases']['reduce_function']['execution_time']
+    
+    merge = data['pipeline']['reduce_phase']['reduce']['phases']['final_merge']['execution_time']
+    
+    #Merge into bars
+    preprocessing_bar = [fastq_preprocessing, fasta_preprocessing, 0, 0, 0, 0, 0, 0]
+    map_bar = [0, 0, map_one, index_correction, map_two, 0, 0, 0]
+    reduce_bar = [0, 0, 0, 0, 0, dist_indexes, reduce, 0]
+    merge_bar = [0, 0, 0, 0, 0, 0, 0, merge]
+    
+    x = ['Preprocessing', 'Map', 'Reduce', 'Merge']
+    bars = [[0 for j in range(4)] for i in range(8)]
+    i = 0
+    for x1, x2, x3, x4 in zip(preprocessing_bar, map_bar, reduce_bar, merge_bar):
+        bars[i][0] = x1
+        bars[i][1] = x2
+        bars[i][2] = x3
+        bars[i][3] = x4
+        i += 1
+    
+    values = np.array(bars)
+    fig, ax = plt.subplots()
+    
+    colors = ['red', 'orange', 'forestgreen', 'limegreen', 'lime', 'navy', 'blue', 'magenta']
+    
+    # Stacked bar chart with loop
+    for i in range(values.shape[0]):
+        ax.bar(x, values[i], bottom = np.sum(values[:i], axis = 0), color=colors[i])
+        
+    ax.legend(["fastq_preprocessing","fasta_preprocessing","map_stage_one","index_correction",\
+        "map_stage_two","distribute_indexes","reduce_function","merge"], \
+        bbox_to_anchor=(1.01, 1), loc='upper left', borderaxespad=0.)
+    ax.set_title(f"{data['fasta_path'].split('/')[-1]} - 25.7MB - {data['fasta_chunks']} chunks")
+    ax.set_xlabel("Runtime Mem: 2GB - Reducer Runtime Mem: 8GB")
+    ax.set_ylabel("Time in seconds")
+    
+    fig = ax.get_figure()
+    fig.suptitle(f"{data['fastq_path'].split('/')[-1]} - 685.3MB - {data['fastq_chunks']} chunks")
+    fig.savefig("./stats/total_times_by_stage.png", bbox_inches='tight', dpi=400)
+    
+    return data['pipeline']['execution_time']
+
+
+def plot_stages_num(data):
+    #Fetch functions
+    map_one = data['pipeline']['alignReads_phase']['align_reads']['phases']['gem_indexer_mapper']['function_details']
+    index_correction = data['pipeline']['alignReads_phase']['align_reads']['phases']['index_correction']['function_details']
+    map_two = data['pipeline']['alignReads_phase']['align_reads']['phases']['filter_index_to_mpileup']['function_details']
+    
+    dist_indexes = data['pipeline']['reduce_phase']['reduce']['phases']['distribute_indexes']['function_details']
+    reduce = data['pipeline']['reduce_phase']['reduce']['phases']['reduce_function']['function_details']
+    
+    merge = data['pipeline']['reduce_phase']['reduce']['phases']['final_merge']['function_details']
+    
+    #Merge into bars
+    map_bar = [len(map_one), len(index_correction), len(map_two), 0, 0, 0]
+    reduce_bar = [0, 0, 0, len(dist_indexes), len(reduce), 0]
+    merge_bar = [0, 0, 0, 0, 0, len(merge)]
+    
+    x = ['Map', 'Reduce', 'Merge']
+    bars = [[0 for j in range(3)] for i in range(6)]
+    i = 0
+    for x1, x2, x3 in zip(map_bar, reduce_bar, merge_bar):
+        bars[i][0] = x1
+        bars[i][1] = x2
+        bars[i][2] = x3
+        i += 1
+    
+    values = np.array(bars)
+    fig, ax = plt.subplots()
+    
+    colors = ['forestgreen', 'limegreen', 'lime', 'navy', 'blue', 'magenta']
+    
+    # Stacked bar chart with loop
+    for i in range(values.shape[0]):
+        ax.bar(x, values[i], bottom = np.sum(values[:i], axis = 0), color=colors[i])
+        
+    ax.legend(["map_stage_one","index_correction",\
+        "map_stage_two","distribute_indexes","reduce_function","merge"], \
+        bbox_to_anchor=(1.01, 1), loc='upper left', borderaxespad=0.)
+    ax.set_title(f"{data['fasta_path'].split('/')[-1]} - 25.7MB - {data['fasta_chunks']} chunks")
+    ax.set_xlabel("Runtime Mem: 2GB - Reducer Runtime Mem: 8GB")
+    ax.set_ylabel("Number of functions")
+    
+    fig = ax.get_figure()
+    fig.suptitle(f"{data['fastq_path'].split('/')[-1]} - 685.3MB - {data['fastq_chunks']} chunks")
+    fig.savefig("./stats/total_functions_by_stage.png", bbox_inches='tight', dpi=400)
+    
+    total = {
+        'map_one': len(map_one),
+        'index_correction': len(index_correction),
+        'map_two': len(map_two),
+        'dist_indexes': len(dist_indexes),
+        'reduce': len(reduce),
+        'merge': len(merge)
+    }
+    
+    return total
+
+def display_num_func(total):
+    print(f'Map One: {total["map_one"]} functions launched.')
+    print(f'Index Correction: {total["index_correction"]} functions launched.')
+    print(f'Map Two: {total["map_two"]} functions launched.')
+    print(f'Distribute Indexes: {total["dist_indexes"]} functions launched.')
+    print(f'Reduce: {total["reduce"]} functions launched.')
+    print(f'Merge: {total["merge"]} functions launched.')
+
+
 if __name__ == '__main__':
     with open("/home/agabriel/Downloads/logs_stats.json") as json_read:
         data: dict = json.load(json_read)
@@ -241,8 +489,5 @@ if __name__ == '__main__':
     if not os.path.exists('stats'):
         os.makedirs('stats')
     
-    plot_map_one(data)
-    plot_map_two(data)
-    plot_index_correction(data)
-    plot_distribute_indexes(data)
-    plot_reduce(data)
+    t = plot_stages_num(data)
+    display_num_func(t)
