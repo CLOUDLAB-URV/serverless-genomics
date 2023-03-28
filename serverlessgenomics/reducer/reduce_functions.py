@@ -134,7 +134,7 @@ def distribute_indexes(pipeline_params: PipelineRun, keys: Tuple[str], storage: 
     
     # Now we distribute the indexes depending on the max number of indexes we want each reducer to process
     timestamps.store_size_data("distribute_indexes", time())
-    MAX_INDEXES = 50_000_000
+    MAX_INDEXES = 20_000_000
     workers_data = []
     indexes = 0
     
