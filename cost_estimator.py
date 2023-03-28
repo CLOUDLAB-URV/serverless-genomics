@@ -4,10 +4,19 @@ import csv
 import lithops
 
 def cost_estimation(data, cost_mem, cost_reduce_mem, select_scan_cost, select_return_cost, bucket, storage):
+    #Gem
+    gem_generation = 0
+    
+    function_details = data['pipeline']['alignReads_phase']['align_reads']['phases']['gem_generator']['function_details']
+    for elem in function_details:
+        k = list(elem.keys())[0]
+        timestamps = elem[k]['timestamps']
+        gem_generation += (timestamps['end'] - timestamps['start'])
+    
     #Map One
     map_one_sum = 0
     
-    function_details = data['pipeline']['alignReads_phase']['align_reads']['phases']['gem_indexer_mapper']['function_details']
+    function_details = data['pipeline']['alignReads_phase']['align_reads']['phases']['aligner_indexer']['function_details']
     for elem in function_details:
         k = list(elem.keys())[0]
         timestamps = elem[k]['timestamps']
@@ -58,29 +67,33 @@ def cost_estimation(data, cost_mem, cost_reduce_mem, select_scan_cost, select_re
             merge_sum += elem[k]['execution_time']
         
     #S3 Select Operations
-    dist_select_scan = 0
-    dist_select_returned = 0
-    
-    function_details = data['pipeline']['reduce_phase']['reduce']['phases']['distribute_indexes']['function_details']
-    for elem in function_details:
-        k = list(elem.keys())[0]
-        dist_select_returned += int(elem[k]['data_sizes']['total_data_from_select']) / 1000
-        for file_k in elem[k]['data_sizes']['keys']:
-            resp = storage.head_object(bucket=bucket, key=file_k)
-            dist_select_scan += (int(resp['content-length']) / (1000*1000*1000))
-    
-    reduce_select_scan = 0
-    reduce_select_returned = 0
-    
-    function_details = data['pipeline']['reduce_phase']['reduce']['phases']['reduce_function']['function_details']
-    for elem in function_details:
-        k = list(elem.keys())[0]
-        k2 = list(elem[k]['data_sizes'].keys())[0]
-        reduce_select_returned += int(elem[k]['data_sizes'][k2]) / 1000
-        for file_k in elem[k]['data_sizes']['keys']:
-            resp = storage.head_object(bucket=bucket, key=file_k)
-            reduce_select_scan += (int(resp['content-length']) / (1000*1000*1000))
-
+    try:
+        select = True
+        dist_select_scan = 0
+        dist_select_returned = 0
+        
+        function_details = data['pipeline']['reduce_phase']['reduce']['phases']['distribute_indexes']['function_details']
+        for elem in function_details:
+            k = list(elem.keys())[0]
+            dist_select_returned += int(elem[k]['data_sizes']['total_data_from_select']) / 1000
+            for file_k in elem[k]['data_sizes']['keys']:
+                resp = storage.head_object(bucket=bucket, key=file_k)
+                dist_select_scan += (int(resp['content-length']) / (1000*1000*1000))
+        
+        reduce_select_scan = 0
+        reduce_select_returned = 0
+        
+        function_details = data['pipeline']['reduce_phase']['reduce']['phases']['reduce_function']['function_details']
+        for elem in function_details:
+            k = list(elem.keys())[0]
+            k2 = list(elem[k]['data_sizes'].keys())[0]
+            reduce_select_returned += int(elem[k]['data_sizes'][k2]) / 1000
+            for file_k in elem[k]['data_sizes']['keys']:
+                resp = storage.head_object(bucket=bucket, key=file_k)
+                reduce_select_scan += (int(resp['content-length']) / (1000*1000*1000))
+    except:
+        print("Original files not found in storage, can't calculate S3 Select costs.")
+        select = False
     
     # Open a new CSV file in write mode
     with open('stats/costs.csv', 'w', newline='') as file:
@@ -90,6 +103,7 @@ def cost_estimation(data, cost_mem, cost_reduce_mem, select_scan_cost, select_re
         writer.writerow(['Stage', 'Cost'])
 
         # Write each stage and its corresponding cost
+        writer.writerow(['gem_generation', gem_generation*cost_mem])
         writer.writerow(['map_one', map_one_sum*cost_mem])
         writer.writerow(['index_correction', index_sum*cost_mem])
         writer.writerow(['map_two', map_two_sum*cost_mem])
@@ -98,13 +112,17 @@ def cost_estimation(data, cost_mem, cost_reduce_mem, select_scan_cost, select_re
         writer.writerow(['reduce', reduce_sum*cost_reduce_mem])
         writer.writerow(['merge', merge_sum*cost_reduce_mem])
         
-        writer.writerow(['dist_indexes_select', dist_select_scan*select_scan_cost+dist_select_returned*select_return_cost])
-        writer.writerow(['reduce_indexes_select', reduce_select_scan*select_scan_cost+reduce_select_returned*select_return_cost])
-        
-        total = map_one_sum*cost_mem + index_sum*cost_mem + map_two_sum*cost_mem \
-            + dist_indexes_sum*cost_reduce_mem + reduce_sum*cost_reduce_mem + merge_sum*cost_reduce_mem \
-            + dist_select_scan*select_scan_cost+dist_select_returned*select_return_cost + reduce_select_scan*select_scan_cost+reduce_select_returned*select_return_cost
-        writer.writerow(['total', total])
+        if select:
+            writer.writerow(['dist_indexes_select', dist_select_scan*select_scan_cost+dist_select_returned*select_return_cost])
+            writer.writerow(['reduce_indexes_select', reduce_select_scan*select_scan_cost+reduce_select_returned*select_return_cost])
+            
+            total = map_one_sum*cost_mem + index_sum*cost_mem + map_two_sum*cost_mem \
+                + dist_indexes_sum*cost_reduce_mem + reduce_sum*cost_reduce_mem + merge_sum*cost_reduce_mem \
+                + dist_select_scan*select_scan_cost+dist_select_returned*select_return_cost + reduce_select_scan*select_scan_cost+reduce_select_returned*select_return_cost
+        else:
+            total = map_one_sum*cost_mem + index_sum*cost_mem + map_two_sum*cost_mem \
+                + dist_indexes_sum*cost_reduce_mem + reduce_sum*cost_reduce_mem + merge_sum*cost_reduce_mem
+        writer.writerow(['total', total]) 
     
 
 if __name__ == '__main__':

@@ -11,14 +11,48 @@ def fetch_general_data(data, dict_data):
     dict_data['reduce_total_time'] = data['pipeline']['reduce_phase']['reduce']['execution_time']
     return dict_data
 
+def plot_gem_generator(data: dict):
+    function_details = data['pipeline']['alignReads_phase']['align_reads']['phases']['gem_generator']['function_details']
+    
+    i = 0
+    download_fasta = []
+    gem_indexer = []
+    upload_gem = []
+    
+    for elem in function_details:
+        k = list(elem.keys())[0]
+        timestamps = elem[k]['timestamps']
+        download_fasta.append(timestamps['gem_indexer'] - timestamps['download_fasta'])
+        gem_indexer.append(timestamps['upload_gem'] - timestamps['gem_indexer'])
+        upload_gem.append(timestamps['end'] - timestamps['upload_gem'])
+        i+=1
+        
+    df = pandas.DataFrame({
+        'download_fasta': download_fasta,
+        'gem_indexer': gem_indexer,
+        'upload_gem': upload_gem
+    })
+    
+    ax = df.plot.barh(stacked=True, title='Gem Generator')
+    ax.legend(bbox_to_anchor=(1.01, 1), loc='upper left', borderaxespad=0.)
+    
+    ax.set_yticks([0, i])
+    ax.set_yticklabels([0, i])
+    
+    ax.set_xlabel("time in seconds")
+    ax.set_ylabel("functions")
+    
+    fig = ax.get_figure()
+    fig.savefig("./stats/gem_generator.png", bbox_inches='tight', dpi=400)
+        
 
 def plot_map_one(data: dict):
-    function_details = data['pipeline']['alignReads_phase']['align_reads']['phases']['gem_indexer_mapper']['function_details']
+    function_details = data['pipeline']['alignReads_phase']['align_reads']['phases']['aligner_indexer']['function_details']
     
     i = 0
     download_fastq = []
     download_fasta = []
-    gem_indexer = []
+    download_gem = []
     map_index_and_filter_map = []
     compress_index = []
     compress_map = []
@@ -33,8 +67,8 @@ def plot_map_one(data: dict):
             start = timestamps['start']
             download_fastq.append(timestamps['download_fastq'] - start)
             download_fasta.append(timestamps['download_fasta'] - timestamps['download_fastq'])
-            gem_indexer.append(timestamps['gem_indexer'] - timestamps['download_fasta'])
-            map_index_and_filter_map.append(timestamps['map_index_and_filter_map'] - timestamps['gem_indexer'])
+            download_gem.append(timestamps['download_gem'] - timestamps['download_fasta'])
+            map_index_and_filter_map.append(timestamps['map_index_and_filter_map'] - timestamps['download_gem'])
             compress_index.append(timestamps['compress_index'] - timestamps['map_index_and_filter_map'])
             compress_map.append(timestamps['compress_map'] - timestamps['compress_index'])
             upload_index.append(timestamps['upload_index'] - timestamps['compress_map'])
@@ -44,8 +78,8 @@ def plot_map_one(data: dict):
             
     df = pandas.DataFrame({
         'download_fastq': download_fasta,
-        'download_fasta': gem_indexer,
-        'gem_indexer': map_index_and_filter_map,
+        'download_fasta': download_gem,
+        'download_gem': map_index_and_filter_map,
         'map_index_and_filter_map': compress_index,
         'compress_index': compress_map,
         'compress_map': upload_index,
@@ -235,8 +269,23 @@ def plot_reduce(data: dict):
 
 
 def plot_data_transfers(data, average=False):
+    #GEM GENERATION
+    gem_generation = data['pipeline']['alignReads_phase']['align_reads']['phases']['gem_generator']['function_details']
+    gem_generation_download = 0
+    gem_generation_upload = 0
+    for func in gem_generation:
+        k = list(func)[0]
+        func = func[k]['data_sizes']
+        keys = list(func)
+        gem_generation_download += func[keys[0]]
+        gem_generation_upload += func[keys[1]]
+    if average:
+        gem_generation_download /= len(gem_generation)
+        gem_generation_upload /= len(gem_generation)
+    
+    
     #ALIGN READS
-    align_reads = data['pipeline']['alignReads_phase']['align_reads']['phases']['gem_indexer_mapper']['function_details']
+    align_reads = data['pipeline']['alignReads_phase']['align_reads']['phases']['aligner_indexer']['function_details']
     
     align_reads_download = 0
     align_reads_upload = 0
@@ -244,8 +293,8 @@ def plot_data_transfers(data, average=False):
         k = list(func)[0]
         func = func[k]['data_sizes']
         keys = list(func)
-        align_reads_download += func[keys[0]] + func[keys[1]]
-        align_reads_upload += func[keys[2]] + func[keys[3]]
+        align_reads_download += func[keys[0]] + func[keys[1]] + func[keys[2]]
+        align_reads_upload += func[keys[3]] + func[keys[4]]
     if average:
         align_reads_download /= len(align_reads)
         align_reads_upload /= len(align_reads)
@@ -315,9 +364,9 @@ def plot_data_transfers(data, average=False):
         reduce_upload /= len(reduce)
     
     #PLOTS
-    categories = ['Map One', 'Index Correction', 'Map Two', 'Dist. Indexes', 'Reduce']
-    downloads = [align_reads_download, index_correction_downloads, map_two_downloads, dist_indexes_downloads, reduce_download]
-    uploads = [align_reads_upload, index_correction_uploads, map_two_uploads, 0, reduce_upload]
+    categories = ['Gem', 'Map One', 'Index', 'Map Two', 'Dist. Indexes', 'Reduce']
+    downloads = [gem_generation_download, align_reads_download, index_correction_downloads, map_two_downloads, dist_indexes_downloads, reduce_download]
+    uploads = [gem_generation_upload, align_reads_upload, index_correction_uploads, map_two_uploads, 0, reduce_upload]
 
     # Positions of bars on y-axis
     y_pos = np.arange(len(categories))
@@ -338,7 +387,6 @@ def plot_data_transfers(data, average=False):
         ax.set_title('Average Data Transfers for one function')
     else:
         ax.set_title('Total Data Transfers')
-    #ax.invert_xaxis()
     ax.legend(bbox_to_anchor=(1.01, 1), loc='upper left', borderaxespad=0.)
 
     fig = ax.get_figure()
@@ -369,7 +417,8 @@ def plot_stages(data):
         + data['pipeline']['preprocess_phase']['preprocess']['subprocesses_fastq']['prepare_fastq_chunks']['execution_time']
     fasta_preprocessing = data['pipeline']['preprocess_phase']['preprocess']['subprocesses_fasta']['prepare_fasta_chunks']['execution_time']
     
-    map_one = data['pipeline']['alignReads_phase']['align_reads']['phases']['gem_indexer_mapper']['execution_time']
+    gem_generation = data['pipeline']['alignReads_phase']['align_reads']['phases']['gem_generator']['execution_time']
+    map_one = data['pipeline']['alignReads_phase']['align_reads']['phases']['aligner_indexer']['execution_time']
     index_correction = data['pipeline']['alignReads_phase']['align_reads']['phases']['index_correction']['execution_time']
     map_two = data['pipeline']['alignReads_phase']['align_reads']['phases']['filter_index_to_mpileup']['execution_time']
     
@@ -379,13 +428,13 @@ def plot_stages(data):
     merge = data['pipeline']['reduce_phase']['reduce']['phases']['final_merge']['execution_time']
     
     #Merge into bars
-    preprocessing_bar = [fastq_preprocessing, fasta_preprocessing, 0, 0, 0, 0, 0, 0]
-    map_bar = [0, 0, map_one, index_correction, map_two, 0, 0, 0]
-    reduce_bar = [0, 0, 0, 0, 0, dist_indexes, reduce, 0]
-    merge_bar = [0, 0, 0, 0, 0, 0, 0, merge]
+    preprocessing_bar = [fastq_preprocessing, fasta_preprocessing, 0, 0, 0, 0, 0, 0, 0]
+    map_bar = [0, 0, gem_generation, map_one, index_correction, map_two, 0, 0, 0]
+    reduce_bar = [0, 0, 0, 0, 0, 0, dist_indexes, reduce, 0]
+    merge_bar = [0, 0, 0, 0, 0, 0, 0, 0, merge]
     
     x = ['Preprocessing', 'Map', 'Reduce', 'Merge']
-    bars = [[0 for j in range(4)] for i in range(8)]
+    bars = [[0 for j in range(4)] for i in range(9)]
     i = 0
     for x1, x2, x3, x4 in zip(preprocessing_bar, map_bar, reduce_bar, merge_bar):
         bars[i][0] = x1
@@ -397,13 +446,13 @@ def plot_stages(data):
     values = np.array(bars)
     fig, ax = plt.subplots()
     
-    colors = ['red', 'orange', 'forestgreen', 'limegreen', 'lime', 'navy', 'blue', 'magenta']
+    colors = ['red', 'orange', 'aquamarine', 'forestgreen', 'limegreen', 'lime', 'navy', 'blue', 'magenta']
     
     # Stacked bar chart with loop
     for i in range(values.shape[0]):
         ax.bar(x, values[i], bottom = np.sum(values[:i], axis = 0), color=colors[i])
         
-    ax.legend(["fastq_preprocessing","fasta_preprocessing","map_stage_one","index_correction",\
+    ax.legend(["fastq_preprocessing","fasta_preprocessing","gem_generation","map_stage_one","index_correction",\
         "map_stage_two","distribute_indexes","reduce_function","merge"], \
         bbox_to_anchor=(1.01, 1), loc='upper left', borderaxespad=0.)
     ax.set_title(f"{data['fasta_path'].split('/')[-1]} - 25.7MB - {data['fasta_chunks']} chunks")
@@ -419,7 +468,8 @@ def plot_stages(data):
 
 def plot_stages_num(data):
     #Fetch functions
-    map_one = data['pipeline']['alignReads_phase']['align_reads']['phases']['gem_indexer_mapper']['function_details']
+    gem_generation = data['pipeline']['alignReads_phase']['align_reads']['phases']['gem_generator']['function_details']
+    map_one = data['pipeline']['alignReads_phase']['align_reads']['phases']['aligner_indexer']['function_details']
     index_correction = data['pipeline']['alignReads_phase']['align_reads']['phases']['index_correction']['function_details']
     map_two = data['pipeline']['alignReads_phase']['align_reads']['phases']['filter_index_to_mpileup']['function_details']
     
@@ -429,12 +479,12 @@ def plot_stages_num(data):
     merge = data['pipeline']['reduce_phase']['reduce']['phases']['final_merge']['function_details']
     
     #Merge into bars
-    map_bar = [len(map_one), len(index_correction), len(map_two), 0, 0, 0]
-    reduce_bar = [0, 0, 0, len(dist_indexes), len(reduce), 0]
-    merge_bar = [0, 0, 0, 0, 0, len(merge)]
+    map_bar = [len(gem_generation), len(map_one), len(index_correction), len(map_two), 0, 0, 0]
+    reduce_bar = [0, 0, 0, 0, len(dist_indexes), len(reduce), 0]
+    merge_bar = [0, 0, 0, 0, 0, 0, len(merge)]
     
     x = ['Map', 'Reduce', 'Merge']
-    bars = [[0 for j in range(3)] for i in range(6)]
+    bars = [[0 for j in range(3)] for i in range(7)]
     i = 0
     for x1, x2, x3 in zip(map_bar, reduce_bar, merge_bar):
         bars[i][0] = x1
@@ -445,13 +495,13 @@ def plot_stages_num(data):
     values = np.array(bars)
     fig, ax = plt.subplots()
     
-    colors = ['forestgreen', 'limegreen', 'lime', 'navy', 'blue', 'magenta']
+    colors = ['aquamarine', 'forestgreen', 'limegreen', 'lime', 'navy', 'blue', 'magenta']
     
     # Stacked bar chart with loop
     for i in range(values.shape[0]):
         ax.bar(x, values[i], bottom = np.sum(values[:i], axis = 0), color=colors[i])
         
-    ax.legend(["map_stage_one","index_correction",\
+    ax.legend(["gem_generation","map_stage_one","index_correction",\
         "map_stage_two","distribute_indexes","reduce_function","merge"], \
         bbox_to_anchor=(1.01, 1), loc='upper left', borderaxespad=0.)
     ax.set_title(f"{data['fasta_path'].split('/')[-1]} - 25.7MB - {data['fasta_chunks']} chunks")
@@ -489,5 +539,15 @@ if __name__ == '__main__':
     if not os.path.exists('stats'):
         os.makedirs('stats')
     
-    t = plot_stages_num(data)
-    display_num_func(t)
+    plot_gem_generator(data)
+    plot_map_one(data)
+    plot_index_correction(data)
+    plot_map_two(data)
+    plot_distribute_indexes(data)
+    plot_reduce(data)
+    
+    plot_data_transfers(data)
+    plot_data_transfers(data, True)
+    
+    plot_stages(data)
+    plot_stages_num(data)

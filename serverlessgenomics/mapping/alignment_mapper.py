@@ -23,8 +23,68 @@ from ..stats import Stats
 
 logger = logging.getLogger(__name__)
 
+def gem_generator(pipeline_params: PipelineRun,
+                       fasta_chunk_id: int, fasta_chunk: dict,
+                       storage: Storage):
+    #Stats
+    stat, timestamps, data_size = Stats(), Stats(), Stats()
+    stat.timer_start(fasta_chunk_id)
+    timestamps.store_size_data("start", time())
+    
+    # Initialize names
+    gem_index_filename = os.path.join(f'{fasta_chunk_id}.gem')
+    
+    # Check if gem file already exists
+    try:
+        storage.head_object(bucket=pipeline_params.storage_bucket, key=f'gem/{gem_index_filename}')
+        stat.timer_stop(fasta_chunk_id)
+        return stat.get_stats()
+    except StorageNoSuchKeyError:
+        pass
+    
+    # Make temp dir and ch into it, save pwd to restore it later
+    tmp_dir = tempfile.mkdtemp()
+    pwd = os.getcwd()
+    os.chdir(tmp_dir)
+    
+    try:
+        # Get fasta chunk and store it to disk in tmp directory
+        timestamps.store_size_data("download_fasta", time())
+        fasta_chunk_filename = f"chunk_{fasta_chunk['chunk_id']}.fasta"
+        fetch_fasta_chunk(fasta_chunk, fasta_chunk_filename, storage, pipeline_params.fasta_path)
+        data_size.store_size_data(fasta_chunk_filename, os.path.getsize(fasta_chunk_filename) / (1024*1024))
 
-def gem_indexer_mapper(pipeline_params: PipelineRun,
+        # gem-indexer appends .gem to output file
+        timestamps.store_size_data("gem_indexer", time())
+        cmd = ['gem-indexer', '--input', fasta_chunk_filename, '--threads', str(multiprocessing.cpu_count()), '-o',
+                gem_index_filename.replace('.gem', '')]
+        print(' '.join(cmd))
+        out = sp.run(cmd, capture_output=True)
+        print(out.stderr.decode('utf-8'))
+        
+        # TODO apparently 1 is return code for success (why)
+        assert out.returncode == 1
+        
+        # Upload the gem file to storage
+        timestamps.store_size_data("upload_gem", time()) 
+        storage.upload_file(file_name=gem_index_filename, bucket=pipeline_params.storage_bucket,
+                                key=f'gem/{gem_index_filename}')
+        
+        # Finish stats
+        data_size.store_size_data(gem_index_filename, os.path.getsize(gem_index_filename) / (1024*1024))
+        stat.timer_stop(fasta_chunk_id)
+        timestamps.store_size_data("end", time())
+        
+        # Store dict
+        stat.store_dictio(timestamps.get_stats(), "timestamps", fasta_chunk_id)
+        stat.store_dictio(data_size.get_stats(), "data_sizes", fasta_chunk_id)
+        return stat.get_stats()
+    finally:
+        os.chdir(pwd)
+        force_delete_local_path(tmp_dir)
+
+
+def aligner_indexer(pipeline_params: PipelineRun,
                        fasta_chunk_id: int, fasta_chunk: dict,
                        fastq_chunk_id: int, fastq_chunk: dict,
                        storage: Storage):
@@ -85,19 +145,11 @@ def gem_indexer_mapper(pipeline_params: PipelineRun,
         fetch_fasta_chunk(fasta_chunk, fasta_chunk_filename, storage, pipeline_params.fasta_path)
         data_size.store_size_data(fasta_chunk_filename, os.path.getsize(fasta_chunk_filename) / (1024*1024))
 
-        # TODO try to move fasta indexing to another preprocessing step
-        gem_index_filename = os.path.join(f'{mapper_id}.gem')
-        cpus = multiprocessing.cpu_count()
-
-        # gem-indexer appends .gem to output file
-        timestamps.store_size_data("gem_indexer", time())
-        cmd = ['gem-indexer', '--input', fasta_chunk_filename, '--threads', str(cpus), '-o',
-               gem_index_filename.replace('.gem', '')]
-        print(' '.join(cmd))
-        out = sp.run(cmd, capture_output=True)
-        print(out.stderr.decode('utf-8'))
-        # TODO apparently 1 is return code for success (why)
-        assert out.returncode == 1
+        # Fetch gem file
+        timestamps.store_size_data("download_gem", time())
+        gem_index_filename = os.path.join(f'{fasta_chunk_id}.gem')
+        storage.download_file(bucket=pipeline_params.storage_bucket, key=f'gem/{gem_index_filename}', file_name=gem_index_filename)
+        data_size.store_size_data(gem_index_filename, os.path.getsize(gem_index_filename) / (1024*1024))
 
         # GENERATE ALIGNMENT AND ALIGNMENT INDEX (FASTQ TO MAP)
         # TODO refactor bash script

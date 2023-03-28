@@ -2,14 +2,23 @@ import collections
 import copy
 import logging
 
-from .alignment_mapper import gem_indexer_mapper, index_correction, filter_index_to_mpileup
+from .alignment_mapper import aligner_indexer, index_correction, filter_index_to_mpileup, gem_generator
 from ..parameters import PipelineRun, Lithops
 from ..stats import Stats
 from ..utils import split_data_result
 
 logger = logging.getLogger(__name__)
 
-def generate_gem_indexer_mapper_iterdata(pipeline_params: PipelineRun, fasta_chunks, fastq_chunks):
+def generate_gem_generator_iterdata(pipeline_params: PipelineRun, fasta_chunks):
+    iterdata = []
+    for fa_i, fa_ch in enumerate(fasta_chunks):
+        if (pipeline_params.fasta_chunk_range is None) or (fa_i in pipeline_params.fasta_chunk_range):
+            params = {'pipeline_params': pipeline_params,
+                    'fasta_chunk_id': fa_i, 'fasta_chunk': fa_ch}
+            iterdata.append(params)
+    return iterdata
+
+def generate_aligner_indexer_iterdata(pipeline_params: PipelineRun, fasta_chunks, fastq_chunks):
     iterdata = []
     for fq_i, fq_ch in enumerate(fastq_chunks):
         if (pipeline_params.fastq_chunk_range is None) or (fq_i in pipeline_params.fastq_chunk_range):
@@ -66,23 +75,30 @@ def run_full_alignment(pipeline_params: PipelineRun, lithops: Lithops, fasta_chu
     Returns:
         float: time taken to execute this phase
     """
-    # MAP: Stage 1
-    # TODO guardar tamaño de datos con los que se juega
-    
     subStat = Stats()
+    
+    # MAP: Stage 0.1
+    logger.debug("PROCESSING GEM")
+    iterdata = generate_gem_generator_iterdata(pipeline_params, fasta_chunks)
+    subStat.timer_start("gem_generator")
+    timers = lithops.invoker.map(gem_generator, iterdata)
+    subStat.timer_stop("gem_generator")
+    subStat.store_dictio(timers, "function_details", "gem_generator")
+    
+    # MAP: Stage 1
     logger.debug("PROCESSING MAP: STAGE 1")    
-    subStat.timer_start('gem_indexer_mapper')   
-    iterdata = generate_gem_indexer_mapper_iterdata(pipeline_params, fasta_chunks, fastq_chunks)
-    gem_indexer_mapper_result = lithops.invoker.map(gem_indexer_mapper, iterdata)  
-    subStat.timer_stop('gem_indexer_mapper')
-    gem_indexer_mapper_result, timers = split_data_result(gem_indexer_mapper_result)
-    subStat.store_dictio(timers, "function_details", "gem_indexer_mapper")
+    subStat.timer_start('aligner_indexer')   
+    iterdata = generate_aligner_indexer_iterdata(pipeline_params, fasta_chunks, fastq_chunks)
+    aligner_indexer_result = lithops.invoker.map(aligner_indexer, iterdata)  
+    subStat.timer_stop('aligner_indexer')
+    aligner_indexer_result, timers = split_data_result(aligner_indexer_result)
+    subStat.store_dictio(timers, "function_details", "aligner_indexer")
     
     # MAP: Index correction
     logger.debug("PROCESSING INDEX CORRECTION") 
     subStat.timer_start('index_correction')
     
-    iterdata = generate_index_correction_iterdata(pipeline_params, gem_indexer_mapper_result)
+    iterdata = generate_index_correction_iterdata(pipeline_params, aligner_indexer_result)
     index_correction_result = lithops.invoker.map(index_correction, iterdata)
     subStat.timer_stop('index_correction')  
     index_correction_result, timers = split_data_result(index_correction_result)
@@ -92,7 +108,7 @@ def run_full_alignment(pipeline_params: PipelineRun, lithops: Lithops, fasta_chu
     logger.debug("PROCESSING MAP: STAGE 2") 
     subStat.timer_start('filter_index_to_mpileup')  
     iterdata = generate_index_to_mpileup_iterdata(pipeline_params, fasta_chunks, fastq_chunks,
-                                                  gem_indexer_mapper_result, index_correction_result)
+                                                  aligner_indexer_result, index_correction_result)
     alignment_output = lithops.invoker.map(filter_index_to_mpileup, iterdata)
     subStat.timer_stop('filter_index_to_mpileup')  
     alignment_output, timers = split_data_result(alignment_output)
