@@ -113,3 +113,8 @@ def fetch_fasta_chunk(fasta_chunk: dict, target_filename: str, storage: lithops.
 
     with open(target_filename, 'w') as target_file:
         target_file.writelines(chunk_body)
+
+def fetch_fastq_chunk_sra(fastq_chunk: dict, target_filename: str, storage: lithops.Storage, fastq_path: S3Path,
+                      storage_bucket: str, fastqgz_index_key: str):
+    
+    Exception("Not implemented")

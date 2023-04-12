@@ -11,8 +11,10 @@ import time
 from math import ceil
 from typing import TYPE_CHECKING, List, Tuple
 
+
 import numpy as np
 import pandas as pd
+import requests
 
 from ..utils import force_delete_local_path, S3Path, try_head_object, get_gztool_path
 
@@ -203,6 +205,7 @@ def prepare_fastq_chunks(pipeline_params: PipelineRun, lithops: Lithops):
         subStat.store_dictio(res[1], 'generating_index_fastq_from_s3')
     elif pipeline_params.fastq_sra is not None:
         # TODO implement get fastq file from sra archive
+        
         raise NotImplementedError()
     else:
         raise Exception('fastq reference required')
@@ -229,6 +232,34 @@ def prepare_fastq_chunks(pipeline_params: PipelineRun, lithops: Lithops):
     subStat.timer_stop('prepare_fastq_chunks')   
     return chunks, subStat
 
+    
+
+import requests
+import xml.etree.ElementTree as ET
+
+def get_sra_metadata(pipeline_params: PipelineRun) -> int:
+    base_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
+    params = {
+        "db": "sra",
+        "id": pipeline_params.fastq_sra,
+        "retmode": "xml"
+    }
+    
+    response = requests.get(base_url, params=params)
+    
+    if response.status_code == 200:
+        xml_data = response.text
+        root = ET.fromstring(xml_data)
+
+        for run in root.iter('RUN'):
+            reads = int(run.get('total_spots'))
+            return reads
+    else:
+        raise Exception(f"Error fetching metadata for {pipeline_params.fastq_sra}: {response.status_code}")
+
+
+    
+    
 # TODO implement get fastq from sra archive
 # def fastq_to_mapfun(fastq_file_key: str, fastq_chunk_data: str) -> str:
 #     """
