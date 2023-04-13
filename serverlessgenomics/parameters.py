@@ -103,13 +103,12 @@ def validate_parameters(params) -> PipelineRun:
     params['fasta_path'] = S3Path.from_uri(params['fasta_path'])
     if 'fastq_path' in params:
         params['fastq_path'] = S3Path.from_uri(params['fastq_path'])
-        
-    fastq_file = str(params['fastq_path']).split("/")[-1]
-    if(fastq_file[0:3] == "SRR"):
-        params["base_name"] = fastq_file.split(".")[0]
+        fastq_file = str(params['fastq_path']).split("/")[-1]
+        if(fastq_file[0:3] == "SRR"):
+            params["base_name"] = fastq_file.split(".")[0]
 
-    fastq_file = str(params['fastq_path']).split("/")[-1]
-    if(fastq_file[0:3] == "SRR"):
-        params["base_name"] = fastq_file.split(".")[0]
+        fastq_file = str(params['fastq_path']).split("/")[-1]
+        if(fastq_file[0:3] == "SRR"):
+            params["base_name"] = fastq_file.split(".")[0]
 
     return PipelineRun(**params)

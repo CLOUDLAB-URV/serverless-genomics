@@ -4,6 +4,7 @@ import subprocess
 import tempfile
 import time
 import threading
+import os
 
 import lithops
 
@@ -114,7 +115,49 @@ def fetch_fasta_chunk(fasta_chunk: dict, target_filename: str, storage: lithops.
     with open(target_filename, 'w') as target_file:
         target_file.writelines(chunk_body)
 
-def fetch_fastq_chunk_sra(fastq_chunk: dict, target_filename: str, storage: lithops.Storage, fastq_path: S3Path,
-                      storage_bucket: str, fastqgz_index_key: str):
+def fetch_fastq_chunk_sra(seq_name: str, fastq_chunk: dict, target_filename: str):
     
-    Exception("Not implemented")
+    """
+    Function to retrieve the relevant SRA chunk using fastq-dump
+    """
+
+    # Make sure fastq-dump is executable
+    subprocess.call(['chmod', '+x', 'fastq-dump'])
+    # To suppress a warning that appears the first time vdb-config is used
+    subprocess.run(['vdb-config', '-i'])
+
+    # Report cloud identity so it can take data from SRA s3 public repositories
+    subprocess.run(['vdb-config', '--report-cloud-identity', 'yes'], capture_output=True)
+
+    start_read = int(fastq_chunk["read_0"])
+    end_read = int(fastq_chunk["read_1"])
+
+    # Run fastq-dump with the specified range of reads
+    out = subprocess.run(['fastq-dump', seq_name, '-X', str(start_read), '-N', str(end_read), '-O', os.getcwd()], capture_output=True)
+
+    # Rename the output file to the desired target filename
+    default_output_filename = f"{seq_name}.fastq"
+    os.rename(default_output_filename, target_filename)
+
+    
+    # TODO implement get fastq from sra archive
+# def fastq_to_mapfun(fastq_file_key: str, fastq_chunk_data: str) -> str:
+#     """
+#     Function executed within the map function to retrieve the relevant fastq chunk from object storage
+#     """
+#     seq_name = fastq_file_key
+#
+#     subprocess.call(['chmod', '+x', 'fastq-dump'])
+#     subprocess.run(['vdb-config', '-i'])  # To supress a warning that appears the first time vdb-config is used
+#
+#     # Report cloud identity so it can take data from s3 needed to be executed only once per vm
+#     output = str(subprocess.run(['vdb-config', '--report-cloud-identity', 'yes'], capture_output=True).stdout)
+#
+#     os.chdir(f"/tmp")
+#     temp_fastq = f'/tmp/' + seq_name + f'_chunk{fastq_chunk_data["number"]}.fastq'
+#     data_output = subprocess.run(['fastq-dump', str(seq_name), '-X', str(int(fastq_chunk_data["start_line"])), '-N',
+#                                   str(int(fastq_chunk_data["end_line"])), '-O', f'/tmp'],
+#                                  capture_output=True)
+#     os.rename(f'/tmp/' + seq_name + '.fastq', temp_fastq)
+#
+#     return temp_fastq

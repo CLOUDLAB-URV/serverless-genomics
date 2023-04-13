@@ -12,7 +12,7 @@ from numpy import int64
 from pathlib import PurePosixPath
 from time import time
 
-from .data_fetch import fetch_fastq_chunk, fetch_fasta_chunk
+from .data_fetch import fetch_fastq_chunk, fetch_fastq_chunk_sra, fetch_fasta_chunk
 from ..utils import force_delete_local_path
 from ..parameters import PipelineRun
 from lithops import Storage
@@ -134,9 +134,13 @@ def aligner_indexer(pipeline_params: PipelineRun,
         # Get fastq chunk and store it to disk in tmp directory
         timestamps.store_size_data("download_fastq", time())
         fastq_chunk_filename = f"chunk_{fastq_chunk['chunk_id']}.fastq"
-        fastqgz_idx_key, _ = pipeline_params.fastqgz_idx_keys
-        fetch_fastq_chunk(fastq_chunk, fastq_chunk_filename, storage, pipeline_params.fastq_path,
-                          pipeline_params.storage_bucket, fastqgz_idx_key)
+        if pipeline_params.fastq_path is not None:
+            fastqgz_idx_key, _ = pipeline_params.fastqgz_idx_keys
+            fetch_fastq_chunk(fastq_chunk, fastq_chunk_filename, storage, pipeline_params.fastq_path,
+                            pipeline_params.storage_bucket, fastqgz_idx_key)
+        elif pipeline_params.fastq_sra is not None:
+            fetch_fastq_chunk_sra(pipeline_params.fastq_sra, fastq_chunk, fastq_chunk_filename)
+            
         data_size.store_size_data(fastq_chunk_filename, os.path.getsize(fastq_chunk_filename) / (1024*1024))
 
         # Get fasta chunk and store it to disk in tmp directory
@@ -167,7 +171,6 @@ def aligner_indexer(pipeline_params: PipelineRun,
         # Reorganize file names
         map_index_filename = os.path.join(tmp_dir, pipeline_params.base_name + "_map.index.txt")
         shutil.move(pipeline_params.base_name + "_map.index.txt", map_index_filename)
-
         filtered_map_filename = os.path.join(tmp_dir, pipeline_params.base_name + "_" + str(mapper_id) + "_filt_wline_no.map")
         shutil.move(pipeline_params.base_name + "_filt_wline_no.map", filtered_map_filename)
 
