@@ -128,7 +128,7 @@ COPY merge_gem_alignment_metrics.sh ${BINS_DIR}/merge_gem_alignment_metrics.sh
 ########################################################
 # FINAL STEPS
 ########################################################
-ENV PYTHONUNBUFFERED TRUE
+ENV PYTHONUNBUFFERED=1
 
 # Include global arg in this stage of the build
 ARG FUNCTION_DIR

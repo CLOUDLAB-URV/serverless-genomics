@@ -224,14 +224,14 @@ def prepare_fastq_chunks(pipeline_params: PipelineRun, lithops: Lithops):
         byte_ranges = get_ranges_from_line_pairs(pipeline_params, lithops, line_pairs, subStat)
         chunks = [{'chunk_id': i, 'line_0': line_0, 'line_1': line_1, 'range_0': range_0, 'range_1': range_1}
                 for i, ((line_0, line_1), (range_0, range_1)) in enumerate(zip(line_pairs, byte_ranges))]
-        subStat.timer_stop('prepare_fastq_chunks')   
+        subStat.timer_stop('prepare_fastq_chunks')
         return chunks, subStat
     elif pipeline_params.fastq_sra is not None:
         # fastq-dump works by number of reads, number of lines = number of reads * 4
         num_reads = get_sra_metadata(pipeline_params)
         reads_batch = ceil(num_reads / pipeline_params.fastq_chunks)
-        read_pairs = [(reads_batch * i, (reads_batch * i) + reads_batch) for i in range(pipeline_params.fastq_chunks)]
-        
+        read_pairs = [(reads_batch * i + (1 if i == 0 else 0), (reads_batch * i) + reads_batch) for i in range(pipeline_params.fastq_chunks)]
+
         # Adjust last pair for num batches not multiple of number of total reads (last batch will have fewer reads)
         if read_pairs[-1][1] > num_reads:
             l0, _ = read_pairs[-1]
@@ -239,8 +239,8 @@ def prepare_fastq_chunks(pipeline_params: PipelineRun, lithops: Lithops):
 
         chunks = [{'chunk_id': i, 'read_0': read_0, 'read_1': read_1}
                 for i, (read_0, read_1) in enumerate(read_pairs)]
-        
         subStat.timer_stop('prepare_fastq_chunks')
+
         
         return chunks, subStat 
     else:

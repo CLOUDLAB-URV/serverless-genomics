@@ -5,6 +5,8 @@ import tempfile
 import time
 import threading
 import os
+import io 
+
 
 import lithops
 
@@ -92,11 +94,10 @@ def fetch_fastq_chunk(fastq_chunk: dict, target_filename: str, storage: lithops.
 
         t1 = time.perf_counter()
         logger.debug('Got partition in %.3f seconds', t1 - t0)
-
         # TODO write lines to file as decompressed instead of saving them all in memory
         with open(target_filename, 'w') as target_file:
             target_file.writelines((line + '\n' for line in lines[:fastq_chunk['line_1'] - fastq_chunk['line_0']]))
-
+        
     finally:
         force_delete_local_path(tmp_index_file)
 
@@ -115,49 +116,33 @@ def fetch_fasta_chunk(fasta_chunk: dict, target_filename: str, storage: lithops.
     with open(target_filename, 'w') as target_file:
         target_file.writelines(chunk_body)
 
-def fetch_fastq_chunk_sra(seq_name: str, fastq_chunk: dict, target_filename: str):
+
+
+def fetch_fastq_chunk_sra(seq_name: str, fastq_chunk: dict, target_filename: str, storage: lithops.Storage, storage_bucket: str):
     
     """
-    Function to retrieve the relevant SRA chunk using fastq-dump
+    Function to retrieve the relevant SRA chunk using fastq-dump and save it to object storage
     """
-
-    # Make sure fastq-dump is executable
-    subprocess.call(['chmod', '+x', 'fastq-dump'])
-    # To suppress a warning that appears the first time vdb-config is used
-    subprocess.run(['vdb-config', '-i'])
-
-    # Report cloud identity so it can take data from SRA s3 public repositories
-    subprocess.run(['vdb-config', '--report-cloud-identity', 'yes'], capture_output=True)
 
     start_read = int(fastq_chunk["read_0"])
     end_read = int(fastq_chunk["read_1"])
-
-    # Run fastq-dump with the specified range of reads
-    out = subprocess.run(['fastq-dump', seq_name, '-X', str(start_read), '-N', str(end_read), '-O', os.getcwd()], capture_output=True)
-
-    # Rename the output file to the desired target filename
-    default_output_filename = f"{seq_name}.fastq"
-    os.rename(default_output_filename, target_filename)
-
     
-    # TODO implement get fastq from sra archive
-# def fastq_to_mapfun(fastq_file_key: str, fastq_chunk_data: str) -> str:
-#     """
-#     Function executed within the map function to retrieve the relevant fastq chunk from object storage
-#     """
-#     seq_name = fastq_file_key
-#
-#     subprocess.call(['chmod', '+x', 'fastq-dump'])
-#     subprocess.run(['vdb-config', '-i'])  # To supress a warning that appears the first time vdb-config is used
-#
-#     # Report cloud identity so it can take data from s3 needed to be executed only once per vm
-#     output = str(subprocess.run(['vdb-config', '--report-cloud-identity', 'yes'], capture_output=True).stdout)
-#
-#     os.chdir(f"/tmp")
-#     temp_fastq = f'/tmp/' + seq_name + f'_chunk{fastq_chunk_data["number"]}.fastq'
-#     data_output = subprocess.run(['fastq-dump', str(seq_name), '-X', str(int(fastq_chunk_data["start_line"])), '-N',
-#                                   str(int(fastq_chunk_data["end_line"])), '-O', f'/tmp'],
-#                                  capture_output=True)
-#     os.rename(f'/tmp/' + seq_name + '.fastq', temp_fastq)
-#
-#     return temp_fastq
+    # To suppress a warning that appears the first time vdb-config is used
+    subprocess.run(['vdb-config', '-i'])
+    # Report cloud identity so it can take data from s3 needed to be executed only once per vm
+    #     output = str(subprocess.run(['vdb-config', '--report-cloud-identity', 'yes'], capture_output=True).stdout)
+    
+
+    # Run fastq-dump with the specified range of reads, splits files in two files if paired end
+    subprocess.run(['fastq-dump', '--split-files', seq_name, '-X', str(start_read), '-N', str(end_read)], capture_output=True)
+    
+    
+    
+    original_output_file_1 = f"{seq_name}_1.fastq"
+    new_output_file_1 = f"{target_filename}"
+
+    os.rename(original_output_file_1, new_output_file_1)
+    
+    # Save the output file to the desired target filename in object storage
+        
+    print(f"Finished fetching chunk {fastq_chunk['chunk_id']} and saved to object storage")

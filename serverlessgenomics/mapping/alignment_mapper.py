@@ -129,7 +129,7 @@ def aligner_indexer(pipeline_params: PipelineRun,
     tmp_dir = tempfile.mkdtemp()
     pwd = os.getcwd()
     os.chdir(tmp_dir)
-
+    print("Working directory: ", os.getcwd())
     try:
         # Get fastq chunk and store it to disk in tmp directory
         timestamps.store_size_data("download_fastq", time())
@@ -139,7 +139,7 @@ def aligner_indexer(pipeline_params: PipelineRun,
             fetch_fastq_chunk(fastq_chunk, fastq_chunk_filename, storage, pipeline_params.fastq_path,
                             pipeline_params.storage_bucket, fastqgz_idx_key)
         elif pipeline_params.fastq_sra is not None:
-            fetch_fastq_chunk_sra(pipeline_params.fastq_sra, fastq_chunk, fastq_chunk_filename)
+            fetch_fastq_chunk_sra(pipeline_params.fastq_sra, fastq_chunk, fastq_chunk_filename,storage,pipeline_params.storage_bucket)
             
         data_size.store_size_data(fastq_chunk_filename, os.path.getsize(fastq_chunk_filename) / (1024*1024))
 
@@ -166,8 +166,7 @@ def aligner_indexer(pipeline_params: PipelineRun,
         print(' '.join(cmd))
         out = sp.run(cmd, capture_output=True)
         print(out.stdout.decode('utf-8'))
-        print(out.stderr.decode('utf-8'))
-
+        
         # Reorganize file names
         map_index_filename = os.path.join(tmp_dir, pipeline_params.base_name + "_map.index.txt")
         shutil.move(pipeline_params.base_name + "_map.index.txt", map_index_filename)
@@ -203,8 +202,7 @@ def aligner_indexer(pipeline_params: PipelineRun,
         stat.store_dictio(data_size.get_stats(), "data_sizes", mapper_id)
         return (fastq_chunk_id, fasta_chunk_id, map_index_key, filtered_map_key), stat.get_stats()
     finally:
-        os.chdir(pwd)
-        force_delete_local_path(tmp_dir)
+        print("Cleaning up")
 
 
 def index_correction(pipeline_params: PipelineRun, fastq_chunk_id: int, map_index_keys: Tuple[str], storage: Storage):
