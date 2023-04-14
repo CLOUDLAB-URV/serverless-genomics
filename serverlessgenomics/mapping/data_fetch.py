@@ -118,7 +118,7 @@ def fetch_fasta_chunk(fasta_chunk: dict, target_filename: str, storage: lithops.
 
 
 
-def fetch_fastq_chunk_sra(seq_name: str, fastq_chunk: dict, target_filename: str, storage: lithops.Storage, storage_bucket: str):
+def fetch_fastq_chunk_sra(seq_name: str, fastq_chunk: dict, target_filename: str):
     
     """
     Function to retrieve the relevant SRA chunk using fastq-dump and save it to object storage

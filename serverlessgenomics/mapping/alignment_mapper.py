@@ -139,7 +139,7 @@ def aligner_indexer(pipeline_params: PipelineRun,
             fetch_fastq_chunk(fastq_chunk, fastq_chunk_filename, storage, pipeline_params.fastq_path,
                             pipeline_params.storage_bucket, fastqgz_idx_key)
         elif pipeline_params.fastq_sra is not None:
-            fetch_fastq_chunk_sra(pipeline_params.fastq_sra, fastq_chunk, fastq_chunk_filename,storage,pipeline_params.storage_bucket)
+            fetch_fastq_chunk_sra(pipeline_params.fastq_sra, fastq_chunk, fastq_chunk_filename)
             
         data_size.store_size_data(fastq_chunk_filename, os.path.getsize(fastq_chunk_filename) / (1024*1024))
 
@@ -159,8 +159,9 @@ def aligner_indexer(pipeline_params: PipelineRun,
         # TODO refactor bash script
         # TODO support implement paired-end, replace not-used with 2nd fastq chunk
         # TODO use proper tmp directory instead of uuid base name
-        # TODO add support for sra source
+        
         timestamps.store_size_data("map_index_and_filter_map", time())
+        #s3 or SRA works the same for the script /function/bin/map_index_and_filter_map_file_cmd_awsruntime.sh on single end sequences.
         cmd = ['/function/bin/map_index_and_filter_map_file_cmd_awsruntime.sh', gem_index_filename,
                fastq_chunk_filename, "not-used", pipeline_params.base_name, "s3", "single-end"]
         print(' '.join(cmd))
