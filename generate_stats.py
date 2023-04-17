@@ -404,11 +404,12 @@ def display_data_transfer_values(downloads, uploads, average=False):
     else:
         print("Total Data Transfers")
     
-    print("Map Phase One: {:.2f}MB downloaded, {:.2f}MB uploaded. Generated data is {:.2f}% of the downloaded data.".format(downloads[0], uploads[0], (uploads[0]/downloads[0]*100)))
-    print("Index Correction: {:.2f}MB downloaded, {:.2f}MB uploaded. Generated data is {:.2f}% of the downloaded data.".format(downloads[1], uploads[1], (uploads[1]/downloads[1]*100)))
-    print("Map Phase Two: {:.2f}MB downloaded, {:.2f}MB uploaded. Generated data is {:.2f}% of the downloaded data.".format(downloads[2], uploads[2], (uploads[2]/downloads[2]*100)))
-    print("Distribute Indexes: {:.2f}MB downloaded. No data is uploaded".format(downloads[3]))
-    print("Reduce Function: {:.2f}MB downloaded, {:.2f}MB uploaded. Generated data is {:.2f}% of the downloaded data.".format(downloads[4], uploads[4], (uploads[4]/downloads[4]*100)))
+    print("Gem Generation: {:.2f}MB downloaded, {:.2f}MB uploaded. Generated data is {:.2f}% of the downloaded data.".format(downloads[0], uploads[0], (uploads[0]/downloads[0]*100)))
+    print("Map Phase One: {:.2f}MB downloaded, {:.2f}MB uploaded. Generated data is {:.2f}% of the downloaded data.".format(downloads[1], uploads[1], (uploads[1]/downloads[1]*100)))
+    print("Index Correction: {:.2f}MB downloaded, {:.2f}MB uploaded. Generated data is {:.2f}% of the downloaded data.".format(downloads[2], uploads[2], (uploads[2]/downloads[2]*100)))
+    print("Map Phase Two: {:.2f}MB downloaded, {:.2f}MB uploaded. Generated data is {:.2f}% of the downloaded data.".format(downloads[3], uploads[3], (uploads[3]/downloads[3]*100)))
+    print("Distribute Indexes: {:.2f}MB downloaded. No data is uploaded".format(downloads[4]))
+    print("Reduce Function: {:.2f}MB downloaded, {:.2f}MB uploaded. Generated data is {:.2f}% of the downloaded data.".format(downloads[5], uploads[5], (uploads[5]/downloads[5]*100)))
 
 
 def plot_stages(data):
@@ -455,12 +456,12 @@ def plot_stages(data):
     ax.legend(["fastq_preprocessing","fasta_preprocessing","gem_generation","map_stage_one","index_correction",\
         "map_stage_two","distribute_indexes","reduce_function","merge"], \
         bbox_to_anchor=(1.01, 1), loc='upper left', borderaxespad=0.)
-    ax.set_title(f"{data['fasta_path'].split('/')[-1]} - 25.7MB - {data['fasta_chunks']} chunks")
+    ax.set_title(f"{data['fasta_path'].split('/')[-1]} - 3GB - {data['fasta_chunks']} chunks")
     ax.set_xlabel("Runtime Mem: 2GB - Reducer Runtime Mem: 8GB")
     ax.set_ylabel("Time in seconds")
     
     fig = ax.get_figure()
-    fig.suptitle(f"{data['fastq_path'].split('/')[-1]} - 685.3MB - {data['fastq_chunks']} chunks")
+    fig.suptitle(f"{data['fastq_path'].split('/')[-1]} - 800MB - {data['fastq_chunks']} chunks")
     fig.savefig("./stats/total_times_by_stage.png", bbox_inches='tight', dpi=400)
     
     return data['pipeline']['execution_time']
@@ -504,12 +505,12 @@ def plot_stages_num(data):
     ax.legend(["gem_generation","map_stage_one","index_correction",\
         "map_stage_two","distribute_indexes","reduce_function","merge"], \
         bbox_to_anchor=(1.01, 1), loc='upper left', borderaxespad=0.)
-    ax.set_title(f"{data['fasta_path'].split('/')[-1]} - 25.7MB - {data['fasta_chunks']} chunks")
+    ax.set_title(f"{data['fasta_path'].split('/')[-1]} - 3GB - {data['fasta_chunks']} chunks")
     ax.set_xlabel("Runtime Mem: 2GB - Reducer Runtime Mem: 8GB")
     ax.set_ylabel("Number of functions")
     
     fig = ax.get_figure()
-    fig.suptitle(f"{data['fastq_path'].split('/')[-1]} - 685.3MB - {data['fastq_chunks']} chunks")
+    fig.suptitle(f"{data['fastq_path'].split('/')[-1]} - 800MB - {data['fastq_chunks']} chunks")
     fig.savefig("./stats/total_functions_by_stage.png", bbox_inches='tight', dpi=400)
     
     total = {
@@ -533,7 +534,7 @@ def display_num_func(total):
 
 
 if __name__ == '__main__':
-    with open("/home/agabriel/Downloads/logs_stats.json") as json_read:
+    with open("/home/agabriel/Downloads/logs_stats_hg19.json") as json_read:
         data: dict = json.load(json_read)
     
     if not os.path.exists('stats'):
@@ -546,8 +547,13 @@ if __name__ == '__main__':
     plot_distribute_indexes(data)
     plot_reduce(data)
     
-    plot_data_transfers(data)
-    plot_data_transfers(data, True)
+    dt, ut = plot_data_transfers(data, False)
+    da, ua = plot_data_transfers(data, True)
+    print("****")
+    display_data_transfer_values(dt, ut, False)
+    print("****")
+    display_data_transfer_values(da, ua, True)
+    print("****")
     
     plot_stages(data)
     plot_stages_num(data)

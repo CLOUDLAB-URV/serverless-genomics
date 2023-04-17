@@ -7,11 +7,16 @@ def cost_estimation(data, cost_mem, cost_reduce_mem, select_scan_cost, select_re
     #Gem
     gem_generation = 0
     
-    function_details = data['pipeline']['alignReads_phase']['align_reads']['phases']['gem_generator']['function_details']
-    for elem in function_details:
-        k = list(elem.keys())[0]
-        timestamps = elem[k]['timestamps']
-        gem_generation += (timestamps['end'] - timestamps['start'])
+    try:
+        gem = True
+        function_details = data['pipeline']['alignReads_phase']['align_reads']['phases']['gem_generator']['function_details']
+        for elem in function_details:
+            k = list(elem.keys())[0]
+            timestamps = elem[k]['timestamps']
+            gem_generation += (timestamps['end'] - timestamps['start'])
+    except:
+        gem = False
+        
     
     #Map One
     map_one_sum = 0
@@ -103,7 +108,8 @@ def cost_estimation(data, cost_mem, cost_reduce_mem, select_scan_cost, select_re
         writer.writerow(['Stage', 'Cost'])
 
         # Write each stage and its corresponding cost
-        writer.writerow(['gem_generation', gem_generation*cost_mem])
+        if gem:
+            writer.writerow(['gem_generation', gem_generation*cost_mem])
         writer.writerow(['map_one', map_one_sum*cost_mem])
         writer.writerow(['index_correction', index_sum*cost_mem])
         writer.writerow(['map_two', map_two_sum*cost_mem])
