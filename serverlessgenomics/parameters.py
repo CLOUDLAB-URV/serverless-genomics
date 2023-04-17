@@ -17,6 +17,7 @@ class PipelineRun:
     """
     Dataclass to store a pipeline's execution state
     """
+
     # Storage path for fasta input file
     fasta_path: S3Path
     # Number of chunks to split fasta input file into
@@ -50,36 +51,38 @@ class PipelineRun:
     runtime_mem: int = 1024
     runtime_timeout: int = 2400
     func_timeout_reduce: int = 2400
-    lb_method: str = 'select'
+    lb_method: str = "select"
     checkpoints: bool = False
     log_level: int = logging.INFO
     log_stats: bool = False
-    log_stats_name: str = 'logs_stats'
+    log_stats_name: str = "logs_stats"
 
     # Bucket name with write permissions to store preprocessed, intermediate and output data
-    storage_bucket: str = 'serverless-genomics'
+    storage_bucket: str = "serverless-genomics"
     # Prefix for fastqgz generated index keys
-    fastqgz_idx_prefix: str = 'fastqgz-indexes/'
+    fastqgz_idx_prefix: str = "fastqgz-indexes/"
     # Prefix for faidx generated index keys
-    faidx_prefix: str = 'faidx-indexes/'
+    faidx_prefix: str = "faidx-indexes/"
     # Prefix for generated reference genome indexes
-    genome_index_prefix: str = 'fasta-indexes/'
+    genome_index_prefix: str = "fasta-indexes/"
     # Prefix for output data keys
-    output_prefix: str = 'output/'
+    output_prefix: str = "output/"
     # Prefix for temporal data keys
-    tmp_prefix: str = 'tmp/'
+    tmp_prefix: str = "tmp/"
 
     @property
     def fastqgz_idx_keys(self):
         """
         Returns a tuple for fastqgz index keys in storage as (index file key, tab data key)
         """
-        return (os.path.join(self.fastqgz_idx_prefix, self.fastq_path.key + '.idx'),
-                os.path.join(self.fastqgz_idx_prefix, self.fastq_path.key + '.tab'))
+        return (
+            os.path.join(self.fastqgz_idx_prefix, self.fastq_path.key + ".idx"),
+            os.path.join(self.fastqgz_idx_prefix, self.fastq_path.key + ".tab"),
+        )
 
     @property
     def faidx_key(self):
-        return os.path.join(self.faidx_prefix, self.fasta_path.key + '.fai')
+        return os.path.join(self.faidx_prefix, self.fasta_path.key + ".fai")
 
 
 @dataclass(frozen=True)
@@ -89,25 +92,24 @@ class Lithops:
 
 
 def validate_parameters(params) -> PipelineRun:
-    if 'fasta_path' not in params:
+    if "fasta_path" not in params:
         raise KeyError()
-    if 'fasta_chunks' not in params:
+    if "fasta_chunks" not in params:
         raise KeyError()
 
     try:
-        params['run_id'] = params['override_id']
-        del params['override_id']
+        params["run_id"] = params["override_id"]
+        del params["override_id"]
     except:
         pass
 
-    params['fasta_path'] = S3Path.from_uri(params['fasta_path'])
-    if 'fastq_path' in params:
-        params['fastq_path'] = S3Path.from_uri(params['fastq_path'])
-        fastq_file = str(params['fastq_path']).split("/")[-1]
-        if(fastq_file[0:3] == "SRR"):
+    params["fasta_path"] = S3Path.from_uri(params["fasta_path"])
+    if "fastq_path" in params:
+        params["fastq_path"] = S3Path.from_uri(params["fastq_path"])
+        fastq_file = str(params["fastq_path"]).split("/")[-1]
+        if fastq_file[0:3] == "SRR":
             params["base_name"] = fastq_file.split(".")[0]
-    elif 'fastq_sra' in params:
-        params["base_name"] = params['fastq_sra']
-
+    elif "fastq_sra" in params:
+        params["base_name"] = params["fastq_sra"]
 
     return PipelineRun(**params)

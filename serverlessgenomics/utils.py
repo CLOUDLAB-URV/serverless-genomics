@@ -29,7 +29,7 @@ class _S3Flavour(_PosixFlavour):
     def parse_parts(self, parts):
         drv, root, parsed = super().parse_parts(parts)
         for part in parsed[1:]:
-            if part == '..':
+            if part == "..":
                 index = parsed.index(part)
                 parsed.pop(index - 1)
                 parsed.remove(part)
@@ -37,7 +37,7 @@ class _S3Flavour(_PosixFlavour):
 
     def make_uri(self, path):
         uri = super().make_uri(path)
-        return uri.replace('file:///', 's3://')
+        return uri.replace("file:///", "s3://")
 
 
 class S3Path(PurePath):
@@ -51,7 +51,7 @@ class S3Path(PurePath):
     __slots__ = ()
 
     @classmethod
-    def from_uri(cls, uri: str) -> 'S3Path':
+    def from_uri(cls, uri: str) -> "S3Path":
         """
         from_uri class method create a class instance from url
 
@@ -59,12 +59,12 @@ class S3Path(PurePath):
         >> PureS3Path.from_url('s3://<bucket>/<key>')
         << PureS3Path('/<bucket>/<key>')
         """
-        if not uri.startswith('s3://'):
-            raise ValueError('Provided uri seems to be no S3 URI!')
+        if not uri.startswith("s3://"):
+            raise ValueError("Provided uri seems to be no S3 URI!")
         return cls(uri[4:])
 
     @classmethod
-    def from_bucket_key(cls, bucket: str, key: str) -> 'S3Path':
+    def from_bucket_key(cls, bucket: str, key: str) -> "S3Path":
         """
         from_bucket_key class method create a class instance from bucket, key pair's
 
@@ -74,10 +74,10 @@ class S3Path(PurePath):
         """
         bucket = cls(cls._flavour.sep, bucket)
         if len(bucket.parts) != 2:
-            raise ValueError('bucket argument contains more then one path element: {}'.format(bucket))
+            raise ValueError("bucket argument contains more then one path element: {}".format(bucket))
         key = cls(key)
         if key.is_absolute():
-            key = key.relative_to('/')
+            key = key.relative_to("/")
         return bucket / key
 
     @property
@@ -89,7 +89,7 @@ class S3Path(PurePath):
         with suppress(ValueError):
             _, bucket, *_ = self.parts
             return bucket
-        return ''
+        return ""
 
     @property
     def key(self) -> str:
@@ -106,7 +106,7 @@ class S3Path(PurePath):
         The parent virtual directory of a key
         Example: foo/bar/baz -> foo/baz
         """
-        vdir, _ = self.key.rsplit('/', 1)
+        vdir, _ = self.key.rsplit("/", 1)
         return vdir
 
     def as_uri(self) -> str:
@@ -117,10 +117,10 @@ class S3Path(PurePath):
 
     def _absolute_path_validation(self):
         if not self.is_absolute():
-            raise ValueError('relative path have no bucket, key specification')
+            raise ValueError("relative path have no bucket, key specification")
 
     def __repr__(self) -> str:
-        return '{}(bucket={},key={})'.format(self.__class__.__name__, self.bucket, self.key)
+        return "{}(bucket={},key={})".format(self.__class__.__name__, self.bucket, self.key)
 
 
 def force_delete_local_path(path):
@@ -148,7 +148,7 @@ def try_get_object(storage: lithops.Storage, bucket: str, key: str, stream: bool
 
 
 def setup_logging(level=logging.INFO):
-    root_logger = logging.getLogger('serverlessgenomics')
+    root_logger = logging.getLogger("serverlessgenomics")
     root_logger.setLevel(level)
     ch = logging.StreamHandler()
     ch.setLevel(logging.DEBUG)
@@ -159,16 +159,16 @@ def setup_logging(level=logging.INFO):
 
 def log_parameters(params: PipelineRun):
     for k, v in asdict(params).items():
-        logger.debug('\t\t%s = %s', k, repr(v))
+        logger.debug("\t\t%s = %s", k, repr(v))
 
 
 def get_gztool_path():
     """
     Utility function that returns the absolute path for gzip file binary or raises exception if it is not found
     """
-    proc = subprocess.run(['which', 'gztool'], check=True, capture_output=True, text=True)
-    path = proc.stdout.rstrip('\n')
-    logger.debug('Using gztool located in %s', path)
+    proc = subprocess.run(["which", "gztool"], check=True, capture_output=True, text=True)
+    path = proc.stdout.rstrip("\n")
+    logger.debug("Using gztool located in %s", path)
     return path
 
 
@@ -177,14 +177,16 @@ def copy_to_runtime(storage: Storage, bucket: str, folder: str, file_name: str, 
     Copy file from S3 to local storage.
     """
     temp_file = "/tmp/" + file_name
-    with open(temp_file, 'wb') as file:
+    with open(temp_file, "wb") as file:
         if fasta is not None:
             # file.write(create_fasta_chunk_for_runtime(storage, bucket, fasta, byte_range, folder, file_name))
             raise Exception()
         else:
             shutil.copyfileobj(
-                storage.get_object(bucket=bucket, key=folder + file_name, stream=True, extra_get_args=byte_range), file)
+                storage.get_object(bucket=bucket, key=folder + file_name, stream=True, extra_get_args=byte_range), file
+            )
     return temp_file
+
 
 def split_data_result(result):
     aux_timer = []
