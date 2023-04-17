@@ -6,7 +6,7 @@
 ########################################################
 ARG FUNCTION_DIR="/function"
 ARG BINS_DIR="/function/bin"
-FROM python:3.10-slim-buster
+FROM python:3.10-slim-buster as base
 ARG FUNCTION_DIR
 ARG BINS_DIR
 
@@ -14,28 +14,28 @@ ARG BINS_DIR
 # LINUX PACKAGES
 ########################################################
 RUN apt-get update && apt-get install -y \
-        zip \
-        g++ \
-        gcc \
-        make \
-        cmake \
-        autoconf \
-        automake \
-        unzip \
-        perl \
-        git \
-        wget \
-        libssl-dev \
-        libncurses5-dev \
-        zlib1g-dev \
-        libxslt-dev \
-        libxml2-dev \
-        zlib1g-dev \
-        liblzma-dev \
-        libbz2-dev \
-        gawk \
-        && rm -rf /var/lib/apt/lists/* \
-        && apt-cache search linux-headers-generic
+    zip \
+    g++ \
+    gcc \
+    make \
+    cmake \
+    autoconf \
+    automake \
+    unzip \
+    perl \
+    git \
+    wget \
+    libssl-dev \
+    libncurses5-dev \
+    zlib1g-dev \
+    libxslt-dev \
+    libxml2-dev \
+    zlib1g-dev \
+    liblzma-dev \
+    libbz2-dev \
+    gawk \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-cache search linux-headers-generic
 
 ########################################################
 # COMPILE SOME OF THE TOOLS NEEDED
@@ -43,6 +43,10 @@ RUN apt-get update && apt-get install -y \
 # Create function/binaries directories
 RUN mkdir -p ${FUNCTION_DIR}
 RUN mkdir -p ${BINS_DIR}
+
+FROM base as builder
+ARG FUNCTION_DIR
+ARG BINS_DIR
 
 # Compile gem3-mapper
 RUN git clone --recursive https://github.com/smarco/gem3-mapper.git \
@@ -70,7 +74,7 @@ RUN wget https://github.com/circulosmeos/gztool/archive/refs/tags/v1.4.2.zip \
 
 # Compile fastq-dump
 RUN wget https://ftp-trace.ncbi.nlm.nih.gov/sra/sdk/3.0.0/sratoolkit.3.0.0-ubuntu64.tar.gz \
-	&& tar zxvf sratoolkit.3.0.0-ubuntu64.tar.gz  \
+    && tar zxvf sratoolkit.3.0.0-ubuntu64.tar.gz  \
     && cd /sratoolkit.3.0.0-ubuntu64/bin \
     && mv * ${BINS_DIR}
 
@@ -81,34 +85,46 @@ RUN apt-get update  \
 ########################################################
 # PYTHON MODULES
 ########################################################
+
+FROM base as python_packages
+ARG FUNCTION_DIR
+ARG BINS_DIR
+
 RUN pip install --upgrade setuptools six pip \
     && pip install --no-cache-dir \
-        flask \
-        pika \
-        ibm-cos-sdk \
-        redis \
-        gevent \
-        requests \
-        PyYAML \
-        kubernetes \
-        numpy \
-        cloudpickle \
-        ps-mem \
-        tblib \
-        glob2 \
-        matplotlib \
-        # Pipeline specific
-        boto3 \
-        pandas \
-        httplib2 \
-        scipy \
-        kafka-python \
-        pyarrow \
-        fastparquet
+    flask \
+    pika \
+    ibm-cos-sdk \
+    redis \
+    gevent \
+    requests \
+    PyYAML \
+    kubernetes \
+    numpy \
+    cloudpickle \
+    ps-mem \
+    tblib \
+    glob2 \
+    matplotlib \
+    # Pipeline specific
+    boto3 \
+    pandas \
+    httplib2 \
+    scipy \
+    kafka-python \
+    pyarrow \
+    fastparquet
 
 ########################################################
 # SCRIPTS
 ########################################################
+
+FROM base
+ARG FUNCTION_DIR
+ARG BINS_DIR
+COPY --from=builder ${BINS_DIR} ${BINS_DIR}
+COPY --from=python_packages /usr/local/lib/python3.10/site-packages /usr/local/lib/python3.10/site-packages
+
 # Copy scripts
 COPY map_file_index_correction.sh ${BINS_DIR}/map_file_index_correction.sh
 COPY map_index_and_filter_map_file_cmd_awsruntime.sh ${BINS_DIR}/map_index_and_filter_map_file_cmd_awsruntime.sh

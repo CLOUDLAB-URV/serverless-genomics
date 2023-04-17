@@ -130,7 +130,7 @@ def fetch_fastq_chunk_sra(seq_name: str, fastq_chunk: dict, target_filename: str
     # To suppress a warning that appears the first time vdb-config is used
     subprocess.run(['vdb-config', '-i'])
     # Report cloud identity so it can take data from s3 needed to be executed only once per vm
-    #     output = str(subprocess.run(['vdb-config', '--report-cloud-identity', 'yes'], capture_output=True).stdout)
+    subprocess.run(['vdb-config', '--report-cloud-identity', 'yes'], capture_output=True)
     
 
     # Run fastq-dump with the specified range of reads, splits files in two files if paired end
