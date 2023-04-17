@@ -4,6 +4,9 @@ import subprocess
 import tempfile
 import time
 import threading
+import os
+import io 
+
 
 import lithops
 
@@ -91,11 +94,10 @@ def fetch_fastq_chunk(fastq_chunk: dict, target_filename: str, storage: lithops.
 
         t1 = time.perf_counter()
         logger.debug('Got partition in %.3f seconds', t1 - t0)
-
         # TODO write lines to file as decompressed instead of saving them all in memory
         with open(target_filename, 'w') as target_file:
             target_file.writelines((line + '\n' for line in lines[:fastq_chunk['line_1'] - fastq_chunk['line_0']]))
-
+        
     finally:
         force_delete_local_path(tmp_index_file)
 
@@ -113,3 +115,34 @@ def fetch_fasta_chunk(fasta_chunk: dict, target_filename: str, storage: lithops.
 
     with open(target_filename, 'w') as target_file:
         target_file.writelines(chunk_body)
+
+
+
+def fetch_fastq_chunk_sra(seq_name: str, fastq_chunk: dict, target_filename: str):
+    
+    """
+    Function to retrieve the relevant SRA chunk using fastq-dump and save it to object storage
+    """
+
+    start_read = int(fastq_chunk["read_0"])
+    end_read = int(fastq_chunk["read_1"])
+    
+    # To suppress a warning that appears the first time vdb-config is used
+    subprocess.run(['vdb-config', '-i'])
+    # Report cloud identity so it can take data from s3 needed to be executed only once per vm
+    subprocess.run(['vdb-config', '--report-cloud-identity', 'yes'], capture_output=True)
+    
+
+    # Run fastq-dump with the specified range of reads, splits files in two files if paired end
+    subprocess.run(['fastq-dump', '--split-files', seq_name, '-X', str(start_read), '-N', str(end_read)], capture_output=True)
+    
+    
+    
+    original_output_file_1 = f"{seq_name}_1.fastq"
+    new_output_file_1 = f"{target_filename}"
+
+    os.rename(original_output_file_1, new_output_file_1)
+    
+    # Save the output file to the desired target filename in object storage
+        
+    print(f"Finished fetching chunk {fastq_chunk['chunk_id']} and saved to object storage")

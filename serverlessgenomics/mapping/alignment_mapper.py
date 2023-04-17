@@ -12,7 +12,7 @@ from numpy import int64
 from pathlib import PurePosixPath
 from time import time
 
-from .data_fetch import fetch_fastq_chunk, fetch_fasta_chunk
+from .data_fetch import fetch_fastq_chunk, fetch_fastq_chunk_sra, fetch_fasta_chunk
 from ..utils import force_delete_local_path
 from ..parameters import PipelineRun
 from lithops import Storage
@@ -129,14 +129,18 @@ def aligner_indexer(pipeline_params: PipelineRun,
     tmp_dir = tempfile.mkdtemp()
     pwd = os.getcwd()
     os.chdir(tmp_dir)
-
+    print("Working directory: ", os.getcwd())
     try:
         # Get fastq chunk and store it to disk in tmp directory
         timestamps.store_size_data("download_fastq", time())
         fastq_chunk_filename = f"chunk_{fastq_chunk['chunk_id']}.fastq"
-        fastqgz_idx_key, _ = pipeline_params.fastqgz_idx_keys
-        fetch_fastq_chunk(fastq_chunk, fastq_chunk_filename, storage, pipeline_params.fastq_path,
-                          pipeline_params.storage_bucket, fastqgz_idx_key)
+        if pipeline_params.fastq_path is not None:
+            fastqgz_idx_key, _ = pipeline_params.fastqgz_idx_keys
+            fetch_fastq_chunk(fastq_chunk, fastq_chunk_filename, storage, pipeline_params.fastq_path,
+                            pipeline_params.storage_bucket, fastqgz_idx_key)
+        elif pipeline_params.fastq_sra is not None:
+            fetch_fastq_chunk_sra(pipeline_params.fastq_sra, fastq_chunk, fastq_chunk_filename)
+            
         data_size.store_size_data(fastq_chunk_filename, os.path.getsize(fastq_chunk_filename) / (1024*1024))
 
         # Get fasta chunk and store it to disk in tmp directory
@@ -155,19 +159,18 @@ def aligner_indexer(pipeline_params: PipelineRun,
         # TODO refactor bash script
         # TODO support implement paired-end, replace not-used with 2nd fastq chunk
         # TODO use proper tmp directory instead of uuid base name
-        # TODO add support for sra source
+        
         timestamps.store_size_data("map_index_and_filter_map", time())
+        #s3 or SRA works the same for the script /function/bin/map_index_and_filter_map_file_cmd_awsruntime.sh on single end sequences.
         cmd = ['/function/bin/map_index_and_filter_map_file_cmd_awsruntime.sh', gem_index_filename,
                fastq_chunk_filename, "not-used", pipeline_params.base_name, "s3", "single-end"]
         print(' '.join(cmd))
         out = sp.run(cmd, capture_output=True)
         print(out.stdout.decode('utf-8'))
-        print(out.stderr.decode('utf-8'))
-
+        
         # Reorganize file names
         map_index_filename = os.path.join(tmp_dir, pipeline_params.base_name + "_map.index.txt")
         shutil.move(pipeline_params.base_name + "_map.index.txt", map_index_filename)
-
         filtered_map_filename = os.path.join(tmp_dir, pipeline_params.base_name + "_" + str(mapper_id) + "_filt_wline_no.map")
         shutil.move(pipeline_params.base_name + "_filt_wline_no.map", filtered_map_filename)
 
@@ -200,8 +203,7 @@ def aligner_indexer(pipeline_params: PipelineRun,
         stat.store_dictio(data_size.get_stats(), "data_sizes", mapper_id)
         return (fastq_chunk_id, fasta_chunk_id, map_index_key, filtered_map_key), stat.get_stats()
     finally:
-        os.chdir(pwd)
-        force_delete_local_path(tmp_dir)
+        print("Cleaning up")
 
 
 def index_correction(pipeline_params: PipelineRun, fastq_chunk_id: int, map_index_keys: Tuple[str], storage: Storage):
