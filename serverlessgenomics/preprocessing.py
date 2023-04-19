@@ -11,12 +11,15 @@ from typing import TYPE_CHECKING
 
 from lithops.storage.utils import StorageNoSuchKeyError
 
-from serverlessgenomics.datasource.sources.fastqgz import check_fastqgz_index, get_ranges_from_line_pairs
-from serverlessgenomics.datasource.sources.sra import get_sra_metadata
+from .datasource.sources.fastqgz import check_fastqgz_index, get_ranges_from_line_pairs
+from .datasource.sources.sra import get_sra_metadata
+from .datasource.datasources import FASTQSource, FASTASource
 from .datasource import fetch_fasta_chunk
 from .datasource.sources.fasta import generate_faidx_from_s3, get_fasta_byte_ranges
+from .datasource.sources.gem import get_gem_chunk_storage_key
 from .stats import Stats
 from .utils import force_delete_local_path
+
 
 if TYPE_CHECKING:
     from typing import List
@@ -59,7 +62,7 @@ def prepare_fastq_chunks(pipeline_params: PipelineParameters, lithops: Lithops):
         byte_ranges = lithops.invoker.call(get_ranges_from_line_pairs, (pipeline_params, line_pairs))
         fastq_chunks = [
             {
-                "source": "s3_fastqgzip",
+                "source": FASTQSource.S3_GZIP,
                 "chunk_id": i,
                 "line_0": line_0,
                 "line_1": line_1,
@@ -85,7 +88,7 @@ def prepare_fastq_chunks(pipeline_params: PipelineParameters, lithops: Lithops):
             read_pairs[-1] = (l0, num_reads)
 
         fastq_chunks = [
-            {"source": "sra", "chunk_id": i, "read_0": read_0, "read_1": read_1}
+            {"source": FASTQSource.SRA, "chunk_id": i, "read_0": read_0, "read_1": read_1}
             for i, (read_0, read_1) in enumerate(read_pairs)
         ]
         subStat.timer_stop("prepare_fastq_chunks")
@@ -110,11 +113,13 @@ def prepare_fasta_chunks(pipeline_params: PipelineParameters, lithops: Lithops):
     subStat.timer_start("prepare_fasta_chunks")
     num_sequences = generate_faidx_from_s3(pipeline_params, lithops, subStat)
     fasta_chunks = get_fasta_byte_ranges(pipeline_params, lithops, num_sequences)
+
     if pipeline_params.fasta_chunk_range is not None:
         # Compute only specified FASTA chunk range
         r0, r1 = pipeline_params.fasta_chunk_range
         logger.info("Using only FASTA chunks in range %s", pipeline_params.fasta_chunk_range.__repr__())
         fasta_chunks = fasta_chunks[r0:r1]
+
     logger.info("Generated %d chunks for %s", len(fasta_chunks), pipeline_params.fasta_path.as_uri())
     subStat.timer_stop("prepare_fasta_chunks")
 
@@ -142,29 +147,31 @@ def gem_indexer(
     timestamps.store_size_data("start", time())
 
     # Initialize names
-    gem_index_filename = os.path.join(f"{fasta_chunk_id}.gem")
+    gem_index_filename = os.path.join(f"chunk{str(fasta_chunk_id).zfill(4)}.gem")
 
     # Check if gem file already exists
-    try:
-        storage.head_object(bucket=pipeline_params.storage_bucket, key=f"gem/{gem_index_filename}")
-        stat.timer_stop(fasta_chunk_id)
-        return stat.get_stats()
-    except StorageNoSuchKeyError:
-        pass
+    # try:
+    #     storage.head_object(bucket=pipeline_params.storage_bucket, key=f"gem/{gem_index_filename}")
+    #     stat.timer_stop(fasta_chunk_id)
+    #     return stat.get_stats()
+    # except StorageNoSuchKeyError:
+    #     pass
 
-    # Make temp dir and ch into it, save pwd to restore it later
+    # Make temp dir and ch into it, save cwd to restore it later
     tmp_dir = tempfile.mkdtemp()
-    pwd = os.getcwd()
+    cwd = os.getcwd()
     os.chdir(tmp_dir)
 
     try:
         # Get fasta chunk and store it to disk in tmp directory
         timestamps.store_size_data("download_fasta", time())
-        fasta_chunk_filename = f"chunk_{fasta_chunk['chunk_id']}.fasta"
+
+        fasta_chunk_filename = f"chunk_{str(fasta_chunk['chunk_id']).zfill(4)}.fasta"
         fetch_fasta_chunk(fasta_chunk, fasta_chunk_filename, storage, pipeline_params.fasta_path)
+
         data_size.store_size_data(fasta_chunk_filename, os.path.getsize(fasta_chunk_filename) / (1024 * 1024))
 
-        # gem-indexer appends .gem to output file
+        # gem-indexer already appends .gem to output file, so we delete it from the process call arguments
         timestamps.store_size_data("gem_indexer", time())
         cmd = [
             "gem-indexer",
@@ -184,9 +191,8 @@ def gem_indexer(
 
         # Upload the gem file to storage
         timestamps.store_size_data("upload_gem", time())
-        storage.upload_file(
-            file_name=gem_index_filename, bucket=pipeline_params.storage_bucket, key=f"gem/{gem_index_filename}"
-        )
+        gem_index_key = get_gem_chunk_storage_key(pipeline_params, fasta_chunk_id)
+        storage.upload_file(file_name=gem_index_filename, bucket=pipeline_params.storage_bucket, key=gem_index_key)
 
         # Finish stats
         data_size.store_size_data(gem_index_filename, os.path.getsize(gem_index_filename) / (1024 * 1024))
@@ -198,5 +204,5 @@ def gem_indexer(
         stat.store_dictio(data_size.get_stats(), "data_sizes", fasta_chunk_id)
         return stat.get_stats()
     finally:
-        os.chdir(pwd)
+        os.chdir(cwd)
         force_delete_local_path(tmp_dir)

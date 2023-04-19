@@ -36,7 +36,7 @@ def check_fastqgz_index(pipeline_params: PipelineParameters, lithops: Lithops) -
     # Check if fastqgz file exists
     fastq_head = try_head_object(lithops.storage, pipeline_params.fastq_path.bucket, pipeline_params.fastq_path.key)
     if fastq_head is None:
-        raise Exception(f"FASTQGZip file with key {pipeline_params.fastq_path} does not exists")
+        raise Exception(f"FASTQGZip file with key {pipeline_params.fastq_path} does not exist")
 
     # Check if fastqgz index file exists
     index_key, tab_key = get_fastqgz_idx_keys(pipeline_params)
@@ -45,9 +45,7 @@ def check_fastqgz_index(pipeline_params: PipelineParameters, lithops: Lithops) -
     if None in (fastq_idx_head, fastq_tab_head):
         # Generate gzip index file for compressed fastq input
         logger.info("Generating gzip index file for FASTQ %s", pipeline_params.fastq_path.stem)
-        total_lines, dictio = lithops.invoker.call(
-            generate_idx_from_gzip, (pipeline_params, pipeline_params.fastq_path)
-        )
+        total_lines = lithops.invoker.call(generate_idx_from_gzip, (pipeline_params, pipeline_params.fastq_path))
     else:
         # Get total lines from header metadata
         logger.debug("FASTQGZip index for %s found", pipeline_params.fastq_path.stem)
@@ -161,6 +159,8 @@ def generate_idx_from_gzip(pipeline_params: PipelineParameters, gzip_file_path: 
             Fileobj=out_stream,
             ExtraArgs={"Metadata": {"total_lines": str(total_lines)}},
         )
+
+        return total_lines
     finally:
         force_delete_local_path(tmp_index_file_name)
 

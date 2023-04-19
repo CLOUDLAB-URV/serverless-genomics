@@ -60,7 +60,7 @@ class VariantCallingPipeline:
         preprocessStat.store_dictio(subStatFasta.get_stats(), "subprocesses_fasta", "preprocess")
         return preprocessStat
 
-    def mapping_alignment(self):
+    def alignment(self):
         """
         Alignment map pipeline step
         """
@@ -98,7 +98,7 @@ class VariantCallingPipeline:
         Execute all pipeline steps in order
         """
         self.preprocess()
-        self.mapping_alignment()
+        self.alignment()
         # self.reduce()
         # stats: Stats = self.pipeline_stats()
         # stats.timer_start("pipeline")
@@ -137,5 +137,5 @@ class VariantCallingPipeline:
         keys = self.lithops.storage.list_keys(self.parameters.storage_bucket, prefix=self.parameters.faidx_prefix)
         self.lithops.storage.delete_objects(self.parameters.storage_bucket, keys)
 
-        keys = self.lithops.storage.list_keys(self.parameters.storage_bucket, prefix=self.parameters.tmp_prefix)
-        self.lithops.storage.delete_objects(self.parameters.storage_bucket, keys)
+        # keys = self.lithops.storage.list_keys(self.parameters.storage_bucket, prefix=self.parameters.tmp_prefix)
+        # self.lithops.storage.delete_objects(self.parameters.storage_bucket, keys)

@@ -54,16 +54,14 @@ class PipelineParameters:
 
     # Bucket name with write permissions to store preprocessed, intermediate and output data
     storage_bucket: str = "serverless-genomics"
-    # Prefix for fastqgz generated index keys
+    # Prefix for storing cached fastqgz indexes
     fastqgz_idx_prefix: str = "fastqgz-indexes/"
-    # Prefix for faidx generated index keys
+    # Prefix for storing cached faidx indexes
     faidx_prefix: str = "faidx-indexes/"
-    # Prefix for generated reference genome indexes
+    # Prefix for storing cached reference genome indexes
     genome_index_prefix: str = "gem-indexes/"
-    # Prefix for output data keys
+    # Prefix for output data results
     output_prefix: str = "output/"
-    # Prefix for temporal data keys
-    tmp_prefix: str = "tmp/"
 
     # Log level
     log_level: str = "INFO"
