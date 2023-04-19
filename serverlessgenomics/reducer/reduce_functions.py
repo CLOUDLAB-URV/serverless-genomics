@@ -6,12 +6,12 @@ from time import time
 from sys import getsizeof
 
 from lithops import Storage
-from ..parameters import PipelineRun
+from ..pipelineparams import PipelineParameters
 
 from ..stats import Stats
 
 
-def reduce_function(keys, range, mpu_id, n_part, mpu_key, pipeline_params: PipelineRun, storage: Storage):
+def reduce_function(keys, range, mpu_id, n_part, mpu_key, pipeline_params: PipelineParameters, storage: Storage):
     mainStat, timestamps, data_sizes = Stats(), Stats(), Stats()
     timestamps.store_size_data("start", time())
     mainStat.timer_start(f"reduce_{mpu_id}_{n_part}")
@@ -82,12 +82,12 @@ def reduce_function(keys, range, mpu_id, n_part, mpu_key, pipeline_params: Pipel
     return {"PartNumber": n_part, "ETag": part["ETag"], "mpu_id": mpu_id}, mainStat.get_stats()
 
 
-def distribute_indexes(pipeline_params: PipelineRun, keys: Tuple[str], storage: Storage) -> Tuple[Tuple[str]]:
+def distribute_indexes(pipeline_params: PipelineParameters, keys: Tuple[str], storage: Storage) -> Tuple[Tuple[str]]:
     """
     Distribute the indexes between different reducers
 
     Args:
-        pipeline_params (PipelineRun): Pipeline Parameters
+        pipeline_params (PipelineParameters): Pipeline Parameters
         keys (Tuple[str]): Keys to the files generated in the map phase
         storage (Storage): Lithops storage instance
 
@@ -157,7 +157,7 @@ def distribute_indexes(pipeline_params: PipelineRun, keys: Tuple[str], storage: 
 
 
 def final_merge(
-    mpu_id: str, mpu_key: str, key: str, n_part: int, pipeline_params: PipelineRun, storage: Storage
+    mpu_id: str, mpu_key: str, key: str, n_part: int, pipeline_params: PipelineParameters, storage: Storage
 ) -> dict:
     """
     Upload all the generated files by the reduce stage into one final file. This function will be mapped.
@@ -167,7 +167,7 @@ def final_merge(
         mpu_key (str): Multipart Upload Key
         key (str): Key to the part file
         n_part (int): The number of the part file
-        pipeline_params (PipelineRun): Pipeline Parameters
+        pipeline_params (PipelineParameters): Pipeline Parameters
         storage (Storage): Lithops storage instance
 
     Returns:
@@ -190,7 +190,7 @@ def final_merge(
     return {"PartNumber": n_part, "ETag": part["ETag"], "mpu_id": mpu_id}, stat.get_stats()
 
 
-def finish(key: str, mpu_id: str, parts: Tuple[dict], pipeline_params: PipelineRun, s3: Storage):
+def finish(key: str, mpu_id: str, parts: Tuple[dict], pipeline_params: PipelineParameters, s3: Storage):
     """
     Complete the final multipart upload
 
@@ -198,7 +198,7 @@ def finish(key: str, mpu_id: str, parts: Tuple[dict], pipeline_params: PipelineR
         key (str): Multipart upload Key
         mpu_id (str): Multipart upload ID
         parts (Tuple[dict]): Multipart upload parts
-        pipeline_params (PipelineRun): Pipeline parameters
+        pipeline_params (PipelineParameters): Pipeline parameters
         s3 (Storage): Lithops storage instance
     """
     mpu_part = []
@@ -217,7 +217,7 @@ def finish(key: str, mpu_id: str, parts: Tuple[dict], pipeline_params: PipelineR
 
 
 def complete_multipart(
-    keys: Tuple[str], mpu_ids: Tuple[str], parts: Tuple[dict], pipeline_params: PipelineRun, s3: Storage
+    keys: Tuple[str], mpu_ids: Tuple[str], parts: Tuple[dict], pipeline_params: PipelineParameters, s3: Storage
 ):
     """
     Complete a list of multipart uploads.
@@ -226,7 +226,7 @@ def complete_multipart(
         keys (Tuple[str]): Keys to the multipart uploads
         mpu_ids (Tuple[str]): IDs to the multipart uploads
         parts (Tuple[dict]): Parts of each multipart upload
-        pipeline_params (PipelineRun): Pipeline Parameters
+        pipeline_params (PipelineParameters): Pipeline Parameters
         s3 (Storage): Lithops storage instance
     """
     for key, mpu_id in zip(keys, mpu_ids):
@@ -267,12 +267,12 @@ def keys_by_fasta_split(keys: Tuple[str]) -> dict:
     return key_dict
 
 
-def create_multipart_keys(pipeline_params: PipelineRun) -> Tuple[str]:
+def create_multipart_keys(pipeline_params: PipelineParameters) -> Tuple[str]:
     """
     Create the keys that will be used for the multipart uploads
 
     Args:
-        pipeline_params (PipelineRun): Pipeline parameters
+        pipeline_params (PipelineParameters): Pipeline parameters
 
     Returns:
         Tuple[str]: List of keys
@@ -284,12 +284,12 @@ def create_multipart_keys(pipeline_params: PipelineRun) -> Tuple[str]:
     return keys
 
 
-def create_multipart(pipeline_params: PipelineRun, key: str, storage: Storage) -> str:
+def create_multipart(pipeline_params: PipelineParameters, key: str, storage: Storage) -> str:
     """
     Create a S3 multipart upload instance
 
     Args:
-        pipeline_params (PipelineRun): Pipeline Parameters
+        pipeline_params (PipelineParameters): Pipeline Parameters
         key (str): Key for the multipart upload
         storage (Storage): Lithops storage instance
 

@@ -3,7 +3,7 @@ from typing import Tuple
 import lithops as deflithops
 import boto3
 
-from ..parameters import PipelineRun, Lithops
+from ..pipelineparams import PipelineParameters, Lithops
 
 from ..stats import Stats
 from ..utils import split_data_result
@@ -26,7 +26,7 @@ def create_iterdata_reducer(
     distributed_indexes: Tuple[Tuple[str]],
     multipart_ids: Tuple[str],
     multipart_keys: Tuple[str],
-    pipeline_params: PipelineRun,
+    pipeline_params: PipelineParameters,
 ) -> Tuple[dict]:
     """
     Create the iterdata for the reduce stage.
@@ -36,7 +36,7 @@ def create_iterdata_reducer(
         distributed_indexes (Tuple[Tuple[str]]): Indexes that each reducer should process
         multipart_ids (Tuple[str]): Multipart Upload IDs
         multipart_keys (Tuple[str]): Multipart Upload Keys
-        pipeline_params (PipelineRun): Pipeline Parameters
+        pipeline_params (PipelineParameters): Pipeline Parameters
 
     Returns:
         Tuple[dict]: Reduce stage iterdata
@@ -63,7 +63,7 @@ def create_iterdata_reducer(
     return iterdata
 
 
-def run_reducer(pipeline_params: PipelineRun, lithops: Lithops, mapper_output):
+def run_reducer(pipeline_params: PipelineParameters, lithops: Lithops, mapper_output):
     subStat = Stats()
     logger.debug("START OF REDUCE STAGE")
 

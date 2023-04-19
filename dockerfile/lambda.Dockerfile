@@ -1,4 +1,4 @@
-# Dockerfile used to create the runtime needed to execute the Genomics Pipeline
+# lambda.Dockerfile used to create the runtime needed to execute the Genomics Pipeline
 # Example command to build: lithops runtime build -f MyDockerfile -b aws_lambda my-container-runtime-name
 
 ########################################################

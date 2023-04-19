@@ -3,14 +3,14 @@ import copy
 import logging
 
 from .alignment_mapper import aligner_indexer, index_correction, filter_index_to_mpileup, gem_generator
-from ..parameters import PipelineRun, Lithops
+from ..pipelineparams import PipelineParameters, Lithops
 from ..stats import Stats
 from ..utils import split_data_result
 
 logger = logging.getLogger(__name__)
 
 
-def generate_gem_generator_iterdata(pipeline_params: PipelineRun, fasta_chunks):
+def generate_gem_generator_iterdata(pipeline_params: PipelineParameters, fasta_chunks):
     iterdata = []
     for fa_i, fa_ch in enumerate(fasta_chunks):
         if (pipeline_params.fasta_chunk_range is None) or (fa_i in pipeline_params.fasta_chunk_range):
@@ -19,7 +19,7 @@ def generate_gem_generator_iterdata(pipeline_params: PipelineRun, fasta_chunks):
     return iterdata
 
 
-def generate_aligner_indexer_iterdata(pipeline_params: PipelineRun, fasta_chunks, fastq_chunks):
+def generate_aligner_indexer_iterdata(pipeline_params: PipelineParameters, fasta_chunks, fastq_chunks):
     iterdata = []
     for fq_i, fq_ch in enumerate(fastq_chunks):
         if (pipeline_params.fastq_chunk_range is None) or (fq_i in pipeline_params.fastq_chunk_range):
@@ -74,12 +74,12 @@ def generate_index_to_mpileup_iterdata(
     return iterdata
 
 
-def run_full_alignment(pipeline_params: PipelineRun, lithops: Lithops, fasta_chunks, fastq_chunks):
+def run_full_alignment(pipeline_params: PipelineParameters, lithops: Lithops, fasta_chunks, fastq_chunks):
     """
     Execute the map phase
 
     Args:
-        pipeline_params (PipelineRun): pipeline arguments
+        pipeline_params (PipelineParameters): pipeline arguments
         alignment_batches (list): iterdata generated in the preprocessing stage
         map_func (AlignmentMapper): class containing the map functions
         num_chunks (int): number of corrections needed

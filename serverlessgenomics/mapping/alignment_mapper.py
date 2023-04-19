@@ -12,9 +12,9 @@ from numpy import int64
 from pathlib import PurePosixPath
 from time import time
 
-from .data_fetch import fetch_fastq_chunk, fetch_fastq_chunk_sra, fetch_fasta_chunk
+from ..datasource import fetch_fasta_chunk, fetch_fastq_chunk
 from ..utils import force_delete_local_path
-from ..parameters import PipelineRun
+from ..pipelineparams import PipelineParameters
 from lithops import Storage
 from lithops.storage.utils import StorageNoSuchKeyError
 import zipfile
@@ -24,7 +24,7 @@ from ..stats import Stats
 logger = logging.getLogger(__name__)
 
 
-def gem_generator(pipeline_params: PipelineRun, fasta_chunk_id: int, fasta_chunk: dict, storage: Storage):
+def gem_generator(pipeline_params: PipelineParameters, fasta_chunk_id: int, fasta_chunk: dict, storage: Storage):
     # Stats
     stat, timestamps, data_size = Stats(), Stats(), Stats()
     stat.timer_start(fasta_chunk_id)
@@ -92,7 +92,7 @@ def gem_generator(pipeline_params: PipelineRun, fasta_chunk_id: int, fasta_chunk
 
 
 def aligner_indexer(
-    pipeline_params: PipelineRun,
+    pipeline_params: PipelineParameters,
     fasta_chunk_id: int,
     fasta_chunk: dict,
     fastq_chunk_id: int,
@@ -156,18 +156,7 @@ def aligner_indexer(
         # Get fastq chunk and store it to disk in tmp directory
         timestamps.store_size_data("download_fastq", time())
         fastq_chunk_filename = f"chunk_{fastq_chunk['chunk_id']}.fastq"
-        if pipeline_params.fastq_path is not None:
-            fastqgz_idx_key, _ = pipeline_params.fastqgz_idx_keys
-            fetch_fastq_chunk(
-                fastq_chunk,
-                fastq_chunk_filename,
-                storage,
-                pipeline_params.fastq_path,
-                pipeline_params.storage_bucket,
-                fastqgz_idx_key,
-            )
-        elif pipeline_params.fastq_sra is not None:
-            fetch_fastq_chunk_sra(pipeline_params.fastq_sra, fastq_chunk, fastq_chunk_filename)
+        fetch_fastq_chunk(fastq_chunk)
 
         data_size.store_size_data(fastq_chunk_filename, os.path.getsize(fastq_chunk_filename) / (1024 * 1024))
 
@@ -251,7 +240,9 @@ def aligner_indexer(
         print("Cleaning up")
 
 
-def index_correction(pipeline_params: PipelineRun, fastq_chunk_id: int, map_index_keys: Tuple[str], storage: Storage):
+def index_correction(
+    pipeline_params: PipelineParameters, fastq_chunk_id: int, map_index_keys: Tuple[str], storage: Storage
+):
     """
     Lithops callee function
     Corrects the index after the first map iteration.
@@ -366,7 +357,7 @@ def index_correction(pipeline_params: PipelineRun, fastq_chunk_id: int, map_inde
 
 
 def filter_index_to_mpileup(
-    pipeline_params: PipelineRun,
+    pipeline_params: PipelineParameters,
     fasta_chunk_id: int,
     fasta_chunk: dict,
     fastq_chunk_id: int,

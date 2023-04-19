@@ -4,29 +4,23 @@ import logging
 import lithops
 
 from .mapping.map_caller import run_full_alignment
-from .preprocessing.preprocess_fasta import prepare_fasta_chunks
-from .preprocessing.preprocess_fastq import prepare_fastq_chunks
+from .preprocessing import prepare_fastq_chunks, prepare_fasta_chunks
 from .reducer.reduce_caller import run_reducer
 
 # map/reduce functions and executor
-from .cachedlithops import CachedLithopsInvoker
 
-from .parameters import PipelineRun, Lithops, validate_parameters
+from .pipelineparams import PipelineParameters, PipelineRun, Lithops, validate_parameters, new_pipeline_run
 from .stats import Stats
-from .constants import CACHE_PATH
 from .utils import setup_logging, log_parameters
+from .lithopswrapper import LithopsInvokerWrapper
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 
 
 class VariantCallingPipeline:
-    def __init__(self, override_id=None, **params):
-        if override_id is not None:
-            params["override_id"] = override_id
-        self.parameters: PipelineRun = validate_parameters(params)
-        self.fastq_chunks = None
-        self.fasta_chunks = None
-        self.alignment_batches = None
+    def __init__(self, **parameters):
+        self.parameters: PipelineParameters = validate_parameters(parameters)
+        self.state: PipelineRun = new_pipeline_run(self.parameters)
         self._setup()
 
     def _setup(self):
@@ -36,21 +30,14 @@ class VariantCallingPipeline:
         if self.parameters.log_level == logging.DEBUG:
             log_parameters(self.parameters)
 
-        self.lithops = Lithops(storage=lithops.storage.Storage(), invoker=CachedLithopsInvoker(self.parameters))
-
-        with shelve.open(CACHE_PATH) as cache:
-            cache[f"{self.parameters.run_id}/parameters"] = self.parameters
+        storage = lithops.storage.Storage()
+        invoker = LithopsInvokerWrapper(self.parameters.lithops_settings)
+        self.lithops = Lithops(storage=storage, invoker=invoker)
 
     @classmethod
     def restore_run(cls, run_id: str):
-        self = cls.__new__(cls)
-        key = f"{run_id}/parameters"
-        with shelve.open(CACHE_PATH) as cache:
-            if key not in cache:
-                raise KeyError(f"run {run_id} not found in cache")
-            self.parameters = cache[key]
-        self._setup()
-        return self
+        # TODO
+        raise NotImplementedError()
 
     def preprocess(self):
         """
@@ -58,16 +45,14 @@ class VariantCallingPipeline:
         """
         preprocessStat = Stats()
         preprocessStat.timer_start("preprocess")
-        self.fastq_chunks, subStatFastq = prepare_fastq_chunks(self.parameters, self.lithops)
-        # fetch_fastq_chunk(self.fastq_chunks[0], 'test.fastq', self.lithops.storage, self.parameters.fastq_path, self.parameters.storage_bucket, self.parameters.fastqgz_idx_keys[0])
-        self.fasta_chunks, subStatFasta = prepare_fasta_chunks(self.parameters, self.lithops)
-        # fetch_fasta_chunk(self.fasta_chunks[0], 'test', self.lithops.storage, self.parameters.fasta_path)
+        fastq_chunks, subStatFastq = prepare_fastq_chunks(self.parameters, self.lithops)
+        fasta_chunks, subStatFasta = prepare_fasta_chunks(self.parameters, self.lithops)
         preprocessStat.timer_stop("preprocess")
         preprocessStat.store_dictio(subStatFastq.get_stats(), "subprocesses_fastq", "preprocess")
-        preprocessStat.store_dictio(subStatFasta.get_stats(), "subprocesses_fasta", "preprocess")
+        # preprocessStat.store_dictio(subStatFasta.get_stats(), "subprocesses_fasta", "preprocess")
         return preprocessStat
 
-    def align_reads(self):
+    def mapping_alignment(self):
         """
         Alignment map pipeline step
         """
@@ -108,33 +93,36 @@ class VariantCallingPipeline:
         """
         Execute all pipeline steps in order
         """
-        stats: Stats = self.pipeline_stats()
-        stats.timer_start("pipeline")
+        self.preprocess()
+        self.mapping_alignment()
+        # self.reduce()
+        # stats: Stats = self.pipeline_stats()
+        # stats.timer_start("pipeline")
 
         # PreProcess Stage
-        if self.parameters.skip_prep is False:
-            preprocessStat = self.preprocess()
-
-        # Map Stage
-        if self.parameters.skip_map is False:
-            mapper_output, alignReadsStat = self.align_reads()
-
-        # Reduce Stage
-        # TODO: If map phase was skipped an alternative mapper_ouput needs to be provided or generated
-        if self.parameters.skip_reduce is False:
-            reduceStat = self.reduce(mapper_output)
-
-        stats.timer_stop("pipeline")
-
-        if self.parameters.skip_prep is False:
-            stats.store_dictio(preprocessStat.get_stats(), "preprocess_phase", "pipeline")
-        if self.parameters.skip_map is False:
-            stats.store_dictio(alignReadsStat.get_stats(), "alignReads_phase", "pipeline")
-        if self.parameters.skip_reduce is False:
-            stats.store_dictio(reduceStat.get_stats(), "reduce_phase", "pipeline")
-
-        if self.parameters.log_stats:
-            stats.load_stats_to_json(self.parameters.storage_bucket, self.parameters.log_stats_name)
+        # if self.parameters.skip_prep is False:
+        #     preprocessStat = self.preprocess()
+        #
+        # # Map Stage
+        # if self.parameters.skip_map is False:
+        #     mapper_output, alignReadsStat = self.mapping_alignment()
+        #
+        # # Reduce Stage
+        # # TODO: If map phase was skipped an alternative mapper_ouput needs to be provided or generated
+        # if self.parameters.skip_reduce is False:
+        #     reduceStat = self.reduce(mapper_output)
+        #
+        # stats.timer_stop("pipeline")
+        #
+        # if self.parameters.skip_prep is False:
+        #     stats.store_dictio(preprocessStat.get_stats(), "preprocess_phase", "pipeline")
+        # if self.parameters.skip_map is False:
+        #     stats.store_dictio(alignReadsStat.get_stats(), "alignReads_phase", "pipeline")
+        # if self.parameters.skip_reduce is False:
+        #     stats.store_dictio(reduceStat.get_stats(), "reduce_phase", "pipeline")
+        #
+        # if self.parameters.log_stats:
+        #     stats.load_stats_to_json(self.parameters.storage_bucket, self.parameters.log_stats_name)
 
     def clean_all(self):
         keys = self.lithops.storage.list_keys(

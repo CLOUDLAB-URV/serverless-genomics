@@ -8,7 +8,7 @@ import subprocess
 
 from contextlib import suppress
 from pathlib import PurePath, _PosixFlavour
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Union
 from dataclasses import asdict
 
 import lithops
@@ -18,9 +18,9 @@ from lithops.storage.utils import StorageNoSuchKeyError
 
 if TYPE_CHECKING:
     from lithops import Storage
-    from .parameters import PipelineRun
+    from .pipelineparams import PipelineParameters
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("serverlessgenomics")
 
 
 class _S3Flavour(_PosixFlavour):
@@ -42,9 +42,9 @@ class _S3Flavour(_PosixFlavour):
 
 class S3Path(PurePath):
     """
-    PurePath subclass for AWS S3 service.
+    PurePath subclass for AWS S3 service
     Source: https://github.com/liormizr/s3path
-    S3 is not a file-system, but we can look at it like a POSIX system.
+    S3 is not a file-system, but we can look at it like a POSIX system
     """
 
     _flavour = _S3Flavour()
@@ -157,35 +157,19 @@ def setup_logging(level=logging.INFO):
     root_logger.addHandler(ch)
 
 
-def log_parameters(params: PipelineRun):
+def log_parameters(params: PipelineParameters):
     for k, v in asdict(params).items():
         logger.debug("\t\t%s = %s", k, repr(v))
 
 
-def get_gztool_path():
-    """
-    Utility function that returns the absolute path for gzip file binary or raises exception if it is not found
-    """
-    proc = subprocess.run(["which", "gztool"], check=True, capture_output=True, text=True)
-    path = proc.stdout.rstrip("\n")
-    logger.debug("Using gztool located in %s", path)
-    return path
+def guess_sra_accession_from_fastq_path(fastq_s3_path: str) -> Union[str, None]:
+    # TODO
+    return "SRR000000"
 
 
-def copy_to_runtime(storage: Storage, bucket: str, folder: str, file_name: str, byte_range={}, fasta=None):
-    """
-    Copy file from S3 to local storage.
-    """
-    temp_file = "/tmp/" + file_name
-    with open(temp_file, "wb") as file:
-        if fasta is not None:
-            # file.write(create_fasta_chunk_for_runtime(storage, bucket, fasta, byte_range, folder, file_name))
-            raise Exception()
-        else:
-            shutil.copyfileobj(
-                storage.get_object(bucket=bucket, key=folder + file_name, stream=True, extra_get_args=byte_range), file
-            )
-    return temp_file
+def validate_sra_accession_id(sra_accession_id: str) -> bool:
+    # TODO
+    return True
 
 
 def split_data_result(result):

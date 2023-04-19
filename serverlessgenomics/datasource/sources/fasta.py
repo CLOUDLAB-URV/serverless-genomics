@@ -1,19 +1,15 @@
-from __future__ import annotations
-
+import bz2
+import itertools
+import logging
 import math
 import os
 import re
-import logging
-import itertools
-from typing import TYPE_CHECKING
 from functools import reduce
 
-from ..stats import Stats
-from ..utils import try_head_object
-import bz2
+from lithops import Storage
 
-if TYPE_CHECKING:
-    from serverlessgenomics.parameters import PipelineRun, Lithops
+from serverlessgenomics.pipelineparams import PipelineParameters, Lithops
+from serverlessgenomics.utils import try_head_object, S3Path
 
 logger = logging.getLogger(__name__)
 
@@ -122,12 +118,13 @@ def rename_sequence(sequence, param, name_id, offset_head, offset_base):
     return sequence
 
 
-def generate_faidx_from_s3(pipeline_params: PipelineRun, lithops: Lithops, stats):
+def generate_faidx_from_s3(pipeline_params: PipelineParameters, lithops: Lithops, stats):
     fasta_head = try_head_object(lithops.storage, pipeline_params.fasta_path.bucket, pipeline_params.fasta_path.key)
     if fasta_head is None:
         raise Exception(f"fasta file with key {pipeline_params.fastq_path} does not exists")
 
-    faidx_head = try_head_object(lithops.storage, pipeline_params.storage_bucket, pipeline_params.faidx_key)
+    faidx_key = get_faidx_key(pipeline_params)
+    faidx_head = try_head_object(lithops.storage, pipeline_params.storage_bucket, faidx_key)
     if faidx_head is not None:
         logger.debug("Faidx for %s found", pipeline_params.fasta_path.stem)
         num_sequences = int(faidx_head["x-amz-meta-num_sequences"])
@@ -144,7 +141,7 @@ def generate_faidx_from_s3(pipeline_params: PipelineRun, lithops: Lithops, stats
             "fasta_size": fasta_file_sz,
             "num_chunks": pipeline_params.fasta_chunks,
         }
-        extra_env = {"BUCKET": pipeline_params.storage_bucket, "FAIDX_KEY": pipeline_params.faidx_key}
+        extra_env = {"BUCKET": pipeline_params.storage_bucket, "FAIDX_KEY": faidx_key}
         num_sequences = lithops.invoker.map_reduce(
             map_function=create_index_chunked,
             map_iterdata=map_iterdata,
@@ -164,15 +161,13 @@ def generate_faidx_from_s3(pipeline_params: PipelineRun, lithops: Lithops, stats
     )
     stats.store_size_data(
         "size_index_file",
-        lithops.storage.head_object(bucket=pipeline_params.storage_bucket, key=pipeline_params.faidx_key)[
-            "content-length"
-        ],
+        lithops.storage.head_object(bucket=pipeline_params.storage_bucket, key=faidx_key)["content-length"],
     )
     logger.info("Read %d sequences from FASTA %s", num_sequences, pipeline_params.fasta_path.stem)
     return num_sequences
 
 
-def get_fasta_byte_ranges(pipeline_params: PipelineRun, lithops: Lithops, num_sequences):
+def get_fasta_byte_ranges(pipeline_params: PipelineParameters, lithops: Lithops, num_sequences):
     """
     Generate chunks according to the number of fasta chunks requested
     """
@@ -180,7 +175,8 @@ def get_fasta_byte_ranges(pipeline_params: PipelineRun, lithops: Lithops, num_se
     fasta_file_head = lithops.storage.head_object(pipeline_params.fasta_path.bucket, pipeline_params.fasta_path.key)
     fasta_file_sz = int(fasta_file_head["content-length"])
     fa_chunk_size = int(fasta_file_sz / int(pipeline_params.fasta_chunks))
-    compressed_faidx = lithops.storage.get_object(pipeline_params.storage_bucket, pipeline_params.faidx_key)
+    faidx_key = get_faidx_key(pipeline_params)
+    compressed_faidx = lithops.storage.get_object(pipeline_params.storage_bucket, faidx_key)
     faidx = bz2.decompress(compressed_faidx).decode("utf-8").split("\n")
 
     i = j = 0
@@ -226,15 +222,8 @@ def get_fasta_byte_ranges(pipeline_params: PipelineRun, lithops: Lithops, num_se
     return fasta_chunks
 
 
-def prepare_fasta_chunks(pipeline_params: PipelineRun, lithops: Lithops):
-    """
-    Calculate fasta byte ranges and metadata for chunks of a pipeline run, generate faidx index if needed
-    """
-    subStat = Stats()
-    # Get number of sequences from fasta file, generate faidx file if needed
-    subStat.timer_start("prepare_fasta_chunks")
-    num_sequences = generate_faidx_from_s3(pipeline_params, lithops, subStat)
-    fasta_chunks = get_fasta_byte_ranges(pipeline_params, lithops, num_sequences)
-    subStat.timer_stop("prepare_fasta_chunks")
+def get_faidx_key(pipeline_params: PipelineParameters):
+    return os.path.join(pipeline_params.faidx_prefix, pipeline_params.fasta_path.key + ".fai")
 
-    return fasta_chunks, subStat
+
+
