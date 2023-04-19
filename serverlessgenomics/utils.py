@@ -149,28 +149,30 @@ def try_get_object(storage: lithops.Storage, bucket: str, key: str, stream: bool
 
 
 def setup_logging(level=logging.INFO):
-    root_logger = logging.getLogger("serverlessgenomics")
-    root_logger.propagate = False
+    genomics_logger = logging.getLogger("serverlessgenomics")
+    genomics_logger.propagate = False
 
-    root_logger.setLevel(level)
-    sh = logging.StreamHandler(sys.stdout)
+    genomics_logger.setLevel(level)
+    sh = logging.StreamHandler(stream=sys.stdout)
     sh.setLevel(logging.DEBUG)
-    formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(filename)s:%(lineno)s - %(message)s")
+    formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s:%(lineno)s - %(message)s")
     sh.setFormatter(formatter)
-    root_logger.addHandler(sh)
+    genomics_logger.addHandler(sh)
 
-    # root_logger = logging.getLogger("lithops")
-    # root_logger.propagate = False
-    #
-    # root_logger.setLevel(level)
-    # sh = logging.StreamHandler(stream=sys.stdout)
-    # sh.setLevel(logging.DEBUG)
-    # formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(filename)s:%(lineno)s - %(message)s")
-    # sh.setFormatter(formatter)
-    # root_logger.addHandler(sh)
+    # Format Lithops logger the same way as serverlessgenomics module logger
+    lithops_logger = logging.getLogger("lithops")
+    lithops_logger.propagate = False
 
-    # lithops_logger = logging.getLogger("lithops")
-    # lithops_logger.setLevel(logging.CRITICAL)
+    lithops_logger.setLevel(level)
+    sh = logging.StreamHandler(stream=sys.stdout)
+    sh.setLevel(logging.DEBUG)
+    formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s - %(message)s")
+    sh.setFormatter(formatter)
+    lithops_logger.addHandler(sh)
+
+    # Disable module analyzer logger from Lithops
+    multyvac_logger = logging.getLogger("lithops.libs.multyvac")
+    multyvac_logger.setLevel(logging.CRITICAL)
 
 
 def log_parameters(params: PipelineParameters):

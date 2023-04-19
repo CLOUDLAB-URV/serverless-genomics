@@ -3,7 +3,7 @@ import logging
 import lithops
 
 from .mapping.map_caller import run_full_alignment
-from .preprocessing import prepare_fastq_chunks, prepare_fasta_chunks
+from .preprocessing import prepare_fastq_chunks, prepare_fasta_chunks, generate_gem_indexer_iterdata, gem_indexer
 from .reducer.reduce_caller import run_reducer
 
 from .pipeline import PipelineParameters, PipelineRun, Lithops, validate_parameters, new_pipeline_run
@@ -43,10 +43,18 @@ class VariantCallingPipeline:
         """
         preprocessStat = Stats()
         preprocessStat.timer_start("preprocess")
+
         fastq_chunks, subStatFastq = prepare_fastq_chunks(self.parameters, self.lithops)
         self.state.fastq_chunks = fastq_chunks
+
         fasta_chunks, subStatFasta = prepare_fasta_chunks(self.parameters, self.lithops)
         self.state.fasta_chunks = fasta_chunks
+
+        iterdata = generate_gem_indexer_iterdata(self.parameters, self.state.run_id, self.state.fasta_chunks)
+        # subStat.timer_start("gem_generator")
+        timers = self.lithops.invoker.map(gem_indexer, iterdata)
+        # subStat.timer_stop("gem_generator")
+        # subStat.store_dictio(timers, "function_details", "gem_generator")
         preprocessStat.timer_stop("preprocess")
         preprocessStat.store_dictio(subStatFastq.get_stats(), "subprocesses_fastq", "preprocess")
         preprocessStat.store_dictio(subStatFasta.get_stats(), "subprocesses_fasta", "preprocess")
@@ -63,7 +71,6 @@ class VariantCallingPipeline:
         alignReadsStat.store_dictio(subStat.get_stats(), "phases", "align_reads")
         return mapper_output, alignReadsStat
 
-    # TODO implement reduce stage
     def reduce(self, mapper_output):
         reduceStat = Stats()
         reduceStat.timer_start("reduce")

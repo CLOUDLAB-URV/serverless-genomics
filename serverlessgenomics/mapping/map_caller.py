@@ -2,22 +2,12 @@ import collections
 import copy
 import logging
 
-from .alignment_mapper import align_mapper, index_correction, filter_index_to_mpileup, gem_indexer
+from .alignment_mapper import align_mapper, index_correction, filter_index_to_mpileup
 from ..pipeline import PipelineParameters, Lithops, PipelineRun
 from ..stats import Stats
 from ..utils import split_data_result
 
 logger = logging.getLogger(__name__)
-
-
-def generate_gem_indexer_iterdata(pipeline_params: PipelineParameters, fasta_chunks):
-    iterdata = []
-
-    for fa_i, fa_ch in enumerate(fasta_chunks):
-        params = {"pipeline_params": pipeline_params, "fasta_chunk_id": fa_i, "fasta_chunk": fa_ch}
-        iterdata.append(params)
-
-    return iterdata
 
 
 def generate_align_mapping_iterdata(pipeline_params: PipelineParameters, fasta_chunks, fastq_chunks):
@@ -78,14 +68,6 @@ def run_full_alignment(pipeline_params: PipelineParameters, pipeline_run: Pipeli
     Execute the map phase
     """
     subStat = Stats()
-
-    # MAP: Stage 0.1
-    logger.debug("PROCESSING GEM")
-    iterdata = generate_gem_indexer_iterdata(pipeline_params, pipeline_run.fasta_chunks)
-    subStat.timer_start("gem_generator")
-    timers = lithops.invoker.map(gem_indexer, iterdata)
-    subStat.timer_stop("gem_generator")
-    subStat.store_dictio(timers, "function_details", "gem_generator")
 
     # MAP: Stage 1
     logger.debug("PROCESSING MAP: STAGE 1")
