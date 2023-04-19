@@ -10,7 +10,7 @@ from .datasource.sources.fasta import generate_faidx_from_s3, get_fasta_byte_ran
 from .stats import Stats
 
 if TYPE_CHECKING:
-    from .pipelineparams import PipelineParameters, Lithops
+    from .pipeline import PipelineParameters, Lithops
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +45,7 @@ def prepare_fastq_chunks(pipeline_params: PipelineParameters, lithops: Lithops):
             "Calculating byte ranges of %s for %d chunks...", pipeline_params.fastq_path, pipeline_params.fastq_chunks
         )
         byte_ranges = lithops.invoker.call(get_ranges_from_line_pairs, (pipeline_params, line_pairs))
-        chunks = [
+        fastq_chunks = [
             {
                 "source": "s3_fastqgzip",
                 "chunk_id": i,
@@ -56,9 +56,8 @@ def prepare_fastq_chunks(pipeline_params: PipelineParameters, lithops: Lithops):
             }
             for i, ((line_0, line_1), (range_0, range_1)) in enumerate(zip(line_pairs, byte_ranges))
         ]
-        logger.info("Generated %d chunks for %s", len(chunks), pipeline_params.fastq_path)
+        logger.info("Generated %d chunks for %s", len(fastq_chunks), pipeline_params.fastq_path)
         subStat.timer_stop("prepare_fastq_chunks")
-        return chunks, subStat
     elif pipeline_params.sra_accession is not None:
         # fastq-dump works by number of reads, number of lines = number of reads * 4
         num_reads = get_sra_metadata(pipeline_params)
@@ -73,15 +72,21 @@ def prepare_fastq_chunks(pipeline_params: PipelineParameters, lithops: Lithops):
             l0, _ = read_pairs[-1]
             read_pairs[-1] = (l0, num_reads)
 
-        chunks = [
+        fastq_chunks = [
             {"source": "sra", "chunk_id": i, "read_0": read_0, "read_1": read_1}
             for i, (read_0, read_1) in enumerate(read_pairs)
         ]
         subStat.timer_stop("prepare_fastq_chunks")
-
-        return chunks, subStat
     else:
         raise Exception("fastq reference required")
+
+    if pipeline_params.fastq_chunk_range is not None:
+        # Compute only specified FASTQ chunk range
+        r0, r1 = pipeline_params.fastq_chunk_range
+        logger.info("Using only FASTQ chunks in range %s", pipeline_params.fastq_chunk_range.__repr__())
+        fastq_chunks = fastq_chunks[r0:r1]
+
+    return fastq_chunks, subStat
 
 
 def prepare_fasta_chunks(pipeline_params: PipelineParameters, lithops: Lithops):
@@ -93,6 +98,12 @@ def prepare_fasta_chunks(pipeline_params: PipelineParameters, lithops: Lithops):
     subStat.timer_start("prepare_fasta_chunks")
     num_sequences = generate_faidx_from_s3(pipeline_params, lithops, subStat)
     fasta_chunks = get_fasta_byte_ranges(pipeline_params, lithops, num_sequences)
+    if pipeline_params.fasta_chunk_range is not None:
+        # Compute only specified FASTA chunk range
+        r0, r1 = pipeline_params.fasta_chunk_range
+        logger.info("Using only FASTA chunks in range %s", pipeline_params.fasta_chunk_range.__repr__())
+        fasta_chunks = fasta_chunks[r0:r1]
+    logger.info("Generated %d chunks for %s", len(fasta_chunks), pipeline_params.fasta_path.as_uri())
     subStat.timer_stop("prepare_fasta_chunks")
 
     return fasta_chunks, subStat

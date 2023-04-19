@@ -3,7 +3,7 @@ from typing import List
 import pickle
 from lithops.utils import FuturesList
 from lithops import Storage
-from .pipelineparams import PipelineParameters
+from .pipeline import PipelineParameters
 
 
 def copy_to_s3(storage: Storage, bucket: str, file_name: str, temp_to_s3: bool, folder_name: str = "") -> str:

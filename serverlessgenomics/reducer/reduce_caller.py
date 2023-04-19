@@ -3,7 +3,7 @@ from typing import Tuple
 import lithops as deflithops
 import boto3
 
-from ..pipelineparams import PipelineParameters, Lithops
+from ..pipeline import PipelineParameters, Lithops
 
 from ..stats import Stats
 from ..utils import split_data_result

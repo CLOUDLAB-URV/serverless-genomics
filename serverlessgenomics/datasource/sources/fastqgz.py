@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
-from serverlessgenomics.pipelineparams import PipelineParameters, Lithops
+from serverlessgenomics.pipeline import PipelineParameters, Lithops
 from serverlessgenomics.utils import try_head_object, S3Path, force_delete_local_path
 
 if TYPE_CHECKING:
@@ -211,10 +211,7 @@ def get_ranges_from_line_pairs(pipeline_params: PipelineParameters, pairs: List[
 
 
 def fetch_fastq_chunk_s3_fastqgzip(
-        fastq_chunk: dict,
-        target_filename: str,
-        pipeline_parameters: PipelineParameters,
-        storage: Storage
+    fastq_chunk: dict, target_filename: str, pipeline_parameters: PipelineParameters, storage: Storage
 ):
     tmp_index_file = tempfile.mktemp()
     _, gzip_idx_key = get_fastqgz_idx_keys(pipeline_parameters)
@@ -230,8 +227,9 @@ def fetch_fastq_chunk_s3_fastqgzip(
 
         # Get compressed byte range
         extra_get_args = {"Range": f"bytes={fastq_chunk['range_0'] - 1}-{fastq_chunk['range_1'] - 1}"}
-        body = storage.get_object(pipeline_parameters.fastq_path.bucket, pipeline_parameters.fastq_path.key, True,
-                                  extra_get_args)
+        body = storage.get_object(
+            pipeline_parameters.fastq_path.bucket, pipeline_parameters.fastq_path.key, True, extra_get_args
+        )
 
         cmd = [gztool, "-I", tmp_index_file, "-n", str(fastq_chunk["range_0"]), "-L", str(fastq_chunk["line_0"])]
         proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
@@ -318,5 +316,6 @@ def get_gztool_path():
     path = proc.stdout.rstrip("\n")
     logger.debug("Using gztool located in %s", path)
     return path
+
 
 #

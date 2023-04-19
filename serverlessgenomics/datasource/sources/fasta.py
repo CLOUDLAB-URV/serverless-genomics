@@ -8,7 +8,7 @@ from functools import reduce
 
 from lithops import Storage
 
-from serverlessgenomics.pipelineparams import PipelineParameters, Lithops
+from serverlessgenomics.pipeline import PipelineParameters, Lithops
 from serverlessgenomics.utils import try_head_object, S3Path
 
 logger = logging.getLogger(__name__)
@@ -224,6 +224,3 @@ def get_fasta_byte_ranges(pipeline_params: PipelineParameters, lithops: Lithops,
 
 def get_faidx_key(pipeline_params: PipelineParameters):
     return os.path.join(pipeline_params.faidx_prefix, pipeline_params.fasta_path.key + ".fai")
-
-
-

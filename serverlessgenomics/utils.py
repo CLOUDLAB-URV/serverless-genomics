@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 import logging
-import json
 import os
 import shutil
-import subprocess
+import sys
+import colorlog
 
 from contextlib import suppress
 from pathlib import PurePath, _PosixFlavour
 from typing import TYPE_CHECKING, Union
 from dataclasses import asdict
+from pprint import pformat
 
 import lithops
 from lithops.storage.utils import StorageNoSuchKeyError
@@ -18,9 +19,9 @@ from lithops.storage.utils import StorageNoSuchKeyError
 
 if TYPE_CHECKING:
     from lithops import Storage
-    from .pipelineparams import PipelineParameters
+    from .pipeline import PipelineParameters, PipelineRun
 
-logger = logging.getLogger("serverlessgenomics")
+logger = logging.getLogger(__name__)
 
 
 class _S3Flavour(_PosixFlavour):
@@ -149,17 +150,31 @@ def try_get_object(storage: lithops.Storage, bucket: str, key: str, stream: bool
 
 def setup_logging(level=logging.INFO):
     root_logger = logging.getLogger("serverlessgenomics")
+    root_logger.propagate = False
+
     root_logger.setLevel(level)
-    ch = logging.StreamHandler()
-    ch.setLevel(logging.DEBUG)
-    formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s.%(funcName)s:%(lineno)d -- %(message)s")
-    ch.setFormatter(formatter)
-    root_logger.addHandler(ch)
+    sh = logging.StreamHandler(sys.stdout)
+    sh.setLevel(logging.DEBUG)
+    formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(filename)s:%(lineno)s - %(message)s")
+    sh.setFormatter(formatter)
+    root_logger.addHandler(sh)
+
+    # root_logger = logging.getLogger("lithops")
+    # root_logger.propagate = False
+    #
+    # root_logger.setLevel(level)
+    # sh = logging.StreamHandler(stream=sys.stdout)
+    # sh.setLevel(logging.DEBUG)
+    # formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(filename)s:%(lineno)s - %(message)s")
+    # sh.setFormatter(formatter)
+    # root_logger.addHandler(sh)
+
+    # lithops_logger = logging.getLogger("lithops")
+    # lithops_logger.setLevel(logging.CRITICAL)
 
 
 def log_parameters(params: PipelineParameters):
-    for k, v in asdict(params).items():
-        logger.debug("\t\t%s = %s", k, repr(v))
+    logger.debug("Pipeline parameters:\n" + pformat(asdict(params)))
 
 
 def guess_sra_accession_from_fastq_path(fastq_s3_path: str) -> Union[str, None]:

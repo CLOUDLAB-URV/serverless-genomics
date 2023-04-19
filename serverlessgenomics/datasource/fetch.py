@@ -10,19 +10,15 @@ from .sources.sra import fetch_fastq_chunk_sra
 if TYPE_CHECKING:
     from lithops import Storage
     from ..utils import S3Path
-from ..pipelineparams import PipelineParameters
+from ..pipeline import PipelineParameters
 
 
-def fetch_fastq_chunk(pipeline_parameters: PipelineParameters, fastq_chunk: dict, target_filename: str,
-                      storage: Storage):
+def fetch_fastq_chunk(
+    pipeline_parameters: PipelineParameters, fastq_chunk: dict, target_filename: str, storage: Storage
+):
     assert "source" in fastq_chunk
     if fastq_chunk["source"] == FASTQSource.S3_GZIP:
-        fetch_fastq_chunk_s3_fastqgzip(
-            fastq_chunk,
-            target_filename,
-            pipeline_parameters,
-            storage
-        )
+        fetch_fastq_chunk_s3_fastqgzip(fastq_chunk, target_filename, pipeline_parameters, storage)
     elif fastq_chunk["source"] == FASTQSource.SRA:
         fetch_fastq_chunk_sra(pipeline_params.sra_accession, fastq_chunk, fastq_chunk_filename)
     else:

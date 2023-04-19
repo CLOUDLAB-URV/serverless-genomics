@@ -1,4 +1,3 @@
-import shelve
 import logging
 
 import lithops
@@ -7,26 +6,25 @@ from .mapping.map_caller import run_full_alignment
 from .preprocessing import prepare_fastq_chunks, prepare_fasta_chunks
 from .reducer.reduce_caller import run_reducer
 
-# map/reduce functions and executor
-
-from .pipelineparams import PipelineParameters, PipelineRun, Lithops, validate_parameters, new_pipeline_run
+from .pipeline import PipelineParameters, PipelineRun, Lithops, validate_parameters, new_pipeline_run
 from .stats import Stats
 from .utils import setup_logging, log_parameters
 from .lithopswrapper import LithopsInvokerWrapper
 
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 
 
 class VariantCallingPipeline:
     def __init__(self, **parameters):
         self.parameters: PipelineParameters = validate_parameters(parameters)
+        setup_logging(self.parameters.log_level)
+
+        logger.info("Init Serverless Variant Calling Pipeline")
         self.state: PipelineRun = new_pipeline_run(self.parameters)
+
         self._setup()
 
     def _setup(self):
-        setup_logging(self.parameters.log_level)
-        logger.info("Init Serverless Variant Calling Pipeline")
-
         if self.parameters.log_level == logging.DEBUG:
             log_parameters(self.parameters)
 
@@ -46,22 +44,21 @@ class VariantCallingPipeline:
         preprocessStat = Stats()
         preprocessStat.timer_start("preprocess")
         fastq_chunks, subStatFastq = prepare_fastq_chunks(self.parameters, self.lithops)
+        self.state.fastq_chunks = fastq_chunks
         fasta_chunks, subStatFasta = prepare_fasta_chunks(self.parameters, self.lithops)
+        self.state.fasta_chunks = fasta_chunks
         preprocessStat.timer_stop("preprocess")
         preprocessStat.store_dictio(subStatFastq.get_stats(), "subprocesses_fastq", "preprocess")
-        # preprocessStat.store_dictio(subStatFasta.get_stats(), "subprocesses_fasta", "preprocess")
+        preprocessStat.store_dictio(subStatFasta.get_stats(), "subprocesses_fasta", "preprocess")
         return preprocessStat
 
     def mapping_alignment(self):
         """
         Alignment map pipeline step
         """
-        assert self.fasta_chunks is not None and self.fastq_chunks is not None, "generate chunks first!"
         alignReadsStat = Stats()
         alignReadsStat.timer_start("align_reads")
-        mapper_output, subStat = run_full_alignment(
-            self.parameters, self.lithops, self.fasta_chunks, self.fastq_chunks
-        )
+        mapper_output, subStat = run_full_alignment(self.parameters, self.state, self.lithops)
         alignReadsStat.timer_stop("align_reads")
         alignReadsStat.store_dictio(subStat.get_stats(), "phases", "align_reads")
         return mapper_output, alignReadsStat

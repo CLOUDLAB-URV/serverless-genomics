@@ -6,7 +6,7 @@ from time import time
 from sys import getsizeof
 
 from lithops import Storage
-from ..pipelineparams import PipelineParameters
+from ..pipeline import PipelineParameters
 
 from ..stats import Stats
 

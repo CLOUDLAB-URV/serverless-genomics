@@ -5,7 +5,7 @@ import logging
 
 import requests
 
-from serverlessgenomics.pipelineparams import PipelineParameters
+from serverlessgenomics.pipeline import PipelineParameters
 
 logger = logging.getLogger(__name__)
 
@@ -48,8 +48,10 @@ def fetch_fastq_chunk_sra(seq_name: str, fastq_chunk: dict, target_filename: str
 
     # Run fastq-dump with the specified range of reads, splits files in two files if paired end
     proc = subprocess.run(
-        ["fastq-dump", "--split-files", seq_name, "-X", str(start_read), "-N", str(end_read)], check=True,
-        capture_output=True, text=True
+        ["fastq-dump", "--split-files", seq_name, "-X", str(start_read), "-N", str(end_read)],
+        check=True,
+        capture_output=True,
+        text=True,
     )
     print(proc.stdout)
     print(proc.stderr)

@@ -14,5 +14,5 @@ if __name__ == '__main__':
         storage_bucket=BUCKET,
         log_stats=True
     )
-    pipeline.preprocess()
-    # pipeline.run_pipeline()
+    # pipeline.preprocess()
+    pipeline.run_pipeline()
