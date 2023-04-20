@@ -18,7 +18,6 @@ if TYPE_CHECKING:
     from lithops import Storage
 
 
-
 def get_gem_chunk_storage_key(pipeline_params: PipelineParameters, fasta_chunk_id: int) -> str:
     return os.path.join(
         pipeline_params.gem_index_prefix,
@@ -28,21 +27,13 @@ def get_gem_chunk_storage_key(pipeline_params: PipelineParameters, fasta_chunk_i
     )
 
 
-
-
-
-
 def get_gem_chunk_storage_prefix(pipeline_params: PipelineParameters) -> str:
     return os.path.join(
-        pipeline_params.gem_index_prefix,
-        pipeline_params.fasta_path.key,
-        f"{pipeline_params.fasta_chunks}-chunks"
+        pipeline_params.gem_index_prefix, pipeline_params.fasta_path.key, f"{pipeline_params.fasta_chunks}-chunks"
     )
 
 
-def gem_indexer(
-        pipeline_params: PipelineParameters, fasta_chunk_id: int, fasta_chunk: dict, storage: Storage
-):
+def gem_indexer(pipeline_params: PipelineParameters, fasta_chunk_id: int, fasta_chunk: dict, storage: Storage):
     # Stats
     stat, timestamps, data_size = Stats(), Stats(), Stats()
     stat.timer_start(fasta_chunk_id)

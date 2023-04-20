@@ -139,7 +139,7 @@ def prepare_gem_chunks(pipeline_params: PipelineParameters, fasta_chunks: list[d
     for cached_gems_key in cached_gems_keys:
         basename = os.path.basename(cached_gems_key)
         print(basename)
-        matches = re.findall(r'\d+', basename)
+        matches = re.findall(r"\d+", basename)
         assert len(matches) == 1
         chunk_id = int(matches.pop())
         cached_gem_chunk_ids.append(chunk_id)
@@ -149,7 +149,7 @@ def prepare_gem_chunks(pipeline_params: PipelineParameters, fasta_chunks: list[d
 
     if cached_gem_chunk_ids == requested_gems_ids:
         # All chunks are already in storage
-        logger.info("Using %d cached GEM files in storage (prefix=\"%s\")", len(cached_gem_chunk_ids), gems_prefix)
+        logger.info('Using %d cached GEM files in storage (prefix="%s")', len(cached_gem_chunk_ids), gems_prefix)
         return cached_gem_chunk_ids
 
     if not cached_gem_chunk_ids:
