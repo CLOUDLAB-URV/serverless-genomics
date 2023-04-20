@@ -6,6 +6,7 @@ import pathlib
 import shutil
 import subprocess as sp
 import tempfile
+from functools import partial
 from typing import Tuple
 import pandas as pd
 from numpy import int64
@@ -13,7 +14,8 @@ from pathlib import PurePosixPath
 from time import time
 
 from ..datasource import fetch_fasta_chunk, fetch_fastq_chunk
-from ..utils import force_delete_local_path
+from ..datasource.fetch import fetch_gem_chunk
+from ..utils import force_delete_local_path, get_storage_tmp_prefix
 from ..pipeline import PipelineParameters
 from lithops import Storage
 from lithops.storage.utils import StorageNoSuchKeyError
@@ -27,9 +29,8 @@ logger = logging.getLogger(__name__)
 def align_mapper(
     pipeline_params: PipelineParameters,
     run_id: str,
-    fasta_chunk_id: int,
+    mapper_id: str,
     fasta_chunk: dict,
-    fastq_chunk_id: int,
     fastq_chunk: dict,
     storage: Storage,
 ):
@@ -41,35 +42,25 @@ def align_mapper(
     """
     stat, timestamps, data_size = Stats(), Stats(), Stats()
     timestamps.store_size_data("start", time())
-    mapper_id = f"fa{fasta_chunk_id}-fq{fastq_chunk_id}"
+
+    # tmp prefix generator for this mapper
+    mapper_storage_tmp_prefix = partial(get_storage_tmp_prefix, run_id, "align_mapper")
+
     stat.timer_start(mapper_id)
-    map_index_key = os.path.join(
-        pipeline_params.tmp_prefix,
-        run_id,
-        "gem-mapper",
-        f"fq{fastq_chunk_id}",
-        f"fa{fasta_chunk_id}",
-        pipeline_params.sra_accession + "_map.index.txt.bz2",
-    )
-    filtered_map_key = os.path.join(
-        pipeline_params.tmp_prefix,
-        run_id,
-        "gem-mapper",
-        f"fq{fastq_chunk_id}",
-        f"fa{fasta_chunk_id}",
-        pipeline_params.sra_accession + "_filt_wline_no.map.bz2",
-    )
+
+    map_index_key = mapper_storage_tmp_prefix(pipeline_params.sra_accession + "_map.index.txt.bz2")
+    filtered_map_key = mapper_storage_tmp_prefix(pipeline_params.sra_accession + "_filt_wline_no.map.bz2")
 
     # Check if output files already exist in storage
-    try:
-        storage.head_object(bucket=pipeline_params.storage_bucket, key=map_index_key)
-        storage.head_object(bucket=pipeline_params.storage_bucket, key=filtered_map_key)
-        # If they exist, return the keys and skip computing this chunk
-        stat.timer_stop(mapper_id)
-        return (fastq_chunk_id, fasta_chunk_id, map_index_key, filtered_map_key), stat.get_stats()
-    except StorageNoSuchKeyError:
-        # If any output is missing, proceed
-        pass
+    # try:
+    #     storage.head_object(bucket=pipeline_params.storage_bucket, key=map_index_key)
+    #     storage.head_object(bucket=pipeline_params.storage_bucket, key=filtered_map_key)
+    #     # If they exist, return the keys and skip computing this chunk
+    #     stat.timer_stop(mapper_id)
+    #     return (fastq_chunk_id, fasta_chunk_id, map_index_key, filtered_map_key), stat.get_stats()
+    # except StorageNoSuchKeyError:
+    #     # If any output is missing, proceed
+    #     pass
 
     # Make temp dir and ch into it, save pwd to restore it later
     tmp_dir = tempfile.mkdtemp()
@@ -80,22 +71,22 @@ def align_mapper(
         # Get fastq chunk and store it to disk in tmp directory
         timestamps.store_size_data("download_fastq", time())
         fastq_chunk_filename = f"chunk_{fastq_chunk['chunk_id']}.fastq"
-        fetch_fastq_chunk(fastq_chunk)
+        fetch_fastq_chunk(pipeline_params, fastq_chunk, fastq_chunk_filename, storage)
 
         data_size.store_size_data(fastq_chunk_filename, os.path.getsize(fastq_chunk_filename) / (1024 * 1024))
 
         # Get fasta chunk and store it to disk in tmp directory
-        timestamps.store_size_data("download_fasta", time())
-        fasta_chunk_filename = f"chunk_{fasta_chunk['chunk_id']}.fasta"
-        fetch_fasta_chunk(fasta_chunk, fasta_chunk_filename, storage, pipeline_params.fasta_path)
-        data_size.store_size_data(fasta_chunk_filename, os.path.getsize(fasta_chunk_filename) / (1024 * 1024))
+        # timestamps.store_size_data("download_fasta", time())
+        # fasta_chunk_filename = f"chunk_{fasta_chunk['chunk_id']}.fasta"
+        # fetch_fasta_chunk(fasta_chunk, fasta_chunk_filename, storage, pipeline_params.fasta_path)
+        # data_size.store_size_data(fasta_chunk_filename, os.path.getsize(fasta_chunk_filename) / (1024 * 1024))
 
-        # Fetch gem file
+        # Fetch gem file and store it to disk in tmp directory
         timestamps.store_size_data("download_gem", time())
-        gem_index_filename = os.path.join(f"{fasta_chunk_id}.gem")
-        storage.download_file(
-            bucket=pipeline_params.storage_bucket, key=f"gem/{gem_index_filename}", file_name=gem_index_filename
-        )
+
+        gem_index_filename = os.path.join(f"chunk_{fasta_chunk['chunk_id']}.gem")
+        fetch_gem_chunk(pipeline_params, fasta_chunk, gem_index_filename, storage)
+
         data_size.store_size_data(gem_index_filename, os.path.getsize(gem_index_filename) / (1024 * 1024))
 
         # GENERATE ALIGNMENT AND ALIGNMENT INDEX (FASTQ TO MAP)
@@ -110,7 +101,7 @@ def align_mapper(
             gem_index_filename,
             fastq_chunk_filename,
             "not-used",
-            pipeline_params.base_name,
+            pipeline_params.sra_accession,
             "s3",
             "single-end",
         ]
@@ -119,12 +110,12 @@ def align_mapper(
         print(out.stdout.decode("utf-8"))
 
         # Reorganize file names
-        map_index_filename = os.path.join(tmp_dir, pipeline_params.base_name + "_map.index.txt")
-        shutil.move(pipeline_params.base_name + "_map.index.txt", map_index_filename)
+        map_index_filename = os.path.join(tmp_dir, pipeline_params.sra_accession + "_map.index.txt")
+        shutil.move(pipeline_params.sra_accession + "_map.index.txt", map_index_filename)
         filtered_map_filename = os.path.join(
-            tmp_dir, pipeline_params.base_name + "_" + str(mapper_id) + "_filt_wline_no.map"
+            tmp_dir, pipeline_params.sra_accession + "_" + str(mapper_id) + "_filt_wline_no.map"
         )
-        shutil.move(pipeline_params.base_name + "_filt_wline_no.map", filtered_map_filename)
+        shutil.move(pipeline_params.sra_accession + "_filt_wline_no.map", filtered_map_filename)
 
         # Compress outputs
         timestamps.store_size_data("compress_index", time())
@@ -159,7 +150,7 @@ def align_mapper(
         stat.timer_stop(mapper_id)
         stat.store_dictio(timestamps.get_stats(), "timestamps", mapper_id)
         stat.store_dictio(data_size.get_stats(), "data_sizes", mapper_id)
-        return (fastq_chunk_id, fasta_chunk_id, map_index_key, filtered_map_key), stat.get_stats()
+        return (mapper_id, map_index_key, filtered_map_key), stat.get_stats()
     finally:
         print("Cleaning up")
 

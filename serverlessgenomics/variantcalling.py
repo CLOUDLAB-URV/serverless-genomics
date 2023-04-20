@@ -2,12 +2,10 @@ import logging
 
 import lithops
 
-from .datasource.sources.gem import get_gem_chunk_storage_prefix
 from .mapping.map_caller import run_full_alignment
 from .preprocessing import (
     prepare_fastq_chunks,
     prepare_fasta_chunks,
-    generate_gem_indexer_iterdata,
     prepare_gem_chunks,
 )
 from .reducer.reduce_caller import run_reducer

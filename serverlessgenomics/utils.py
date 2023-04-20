@@ -179,6 +179,10 @@ def log_parameters(params: PipelineParameters):
     logger.debug("Pipeline parameters:\n" + pformat(asdict(params)))
 
 
+def get_storage_tmp_prefix(run_id, stage, *args):
+    return os.path.join(f"serverless-genomics.tmp.varcall-{run_id}", stage, *args)
+
+
 def guess_sra_accession_from_fastq_path(fastq_s3_path: str) -> Union[str, None]:
     # TODO
     return "SRR000000"

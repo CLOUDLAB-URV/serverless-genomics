@@ -12,15 +12,14 @@ logger = logging.getLogger(__name__)
 
 def generate_align_mapping_iterdata(pipeline_params: PipelineParameters, pipeline_run: PipelineRun):
     iterdata = []
-    for fq_i, fq_ch in enumerate(pipeline_run.fastq_chunks):
-        for fa_i, fa_ch in enumerate(pipeline_run.fasta_chunks):
+    for fq_ch in pipeline_run.fastq_chunks:
+        for fa_ch in pipeline_run.fasta_chunks:
             params = {
                 "pipeline_params": pipeline_params,
                 "run_id": pipeline_run.run_id,
-                "fasta_chunk_id": fa_i,
+                "mapper_id": f"fa{fa_ch['chunk_id']}-fq{fq_ch['chunk_id']}",
                 "fasta_chunk": fa_ch,
                 "fastq_chunk": fq_ch,
-                "fastq_chunk_id": fq_i,
             }
             iterdata.append(params)
     return iterdata
