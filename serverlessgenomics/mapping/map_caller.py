@@ -10,12 +10,13 @@ from ..utils import split_data_result
 logger = logging.getLogger(__name__)
 
 
-def generate_align_mapping_iterdata(pipeline_params: PipelineParameters, fasta_chunks, fastq_chunks):
+def generate_align_mapping_iterdata(pipeline_params: PipelineParameters, pipeline_run: PipelineRun):
     iterdata = []
-    for fq_i, fq_ch in enumerate(fastq_chunks):
-        for fa_i, fa_ch in enumerate(fasta_chunks):
+    for fq_i, fq_ch in enumerate(pipeline_run.fastq_chunks):
+        for fa_i, fa_ch in enumerate(pipeline_run.fasta_chunks):
             params = {
                 "pipeline_params": pipeline_params,
+                "run_id": pipeline_run.run_id,
                 "fasta_chunk_id": fa_i,
                 "fasta_chunk": fa_ch,
                 "fastq_chunk": fq_ch,
@@ -72,7 +73,7 @@ def run_full_alignment(pipeline_params: PipelineParameters, pipeline_run: Pipeli
     # MAP: Stage 1
     logger.debug("PROCESSING MAP: STAGE 1")
     subStat.timer_start("aligner_indexer")
-    iterdata = generate_align_mapping_iterdata(pipeline_params, pipeline_run.fasta_chunks, pipeline_run.fastq_chunks)
+    iterdata = generate_align_mapping_iterdata(pipeline_params, pipeline_run)
     aligner_indexer_result = lithops.invoker.map(align_mapper, iterdata)
     subStat.timer_stop("aligner_indexer")
     aligner_indexer_result, timers = split_data_result(aligner_indexer_result)

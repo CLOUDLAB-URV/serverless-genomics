@@ -59,7 +59,7 @@ class PipelineParameters:
     # Prefix for storing cached faidx indexes
     faidx_prefix: str = "faidx-indexes/"
     # Prefix for storing cached reference genome indexes
-    genome_index_prefix: str = "gem-indexes/"
+    gem_index_prefix: str = "gem-indexes/"
     # Prefix for output data results
     output_prefix: str = "output/"
 
@@ -82,6 +82,7 @@ class PipelineRun:
 
     fastq_chunks = None
     fasta_chunks = None
+    gem_chunk_ids = None
     alignment_batches = None
 
 

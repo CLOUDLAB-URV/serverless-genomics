@@ -15,5 +15,5 @@ if __name__ == '__main__':
         log_stats=True
     )
     # pipeline.clean_all()
-    pipeline.preprocess()
-    # pipeline.run_pipeline()
+    # pipeline.preprocess()
+    pipeline.run_pipeline()

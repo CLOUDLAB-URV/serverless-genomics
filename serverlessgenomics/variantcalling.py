@@ -2,8 +2,9 @@ import logging
 
 import lithops
 
+from .datasource.sources.gem import get_gem_chunk_storage_prefix
 from .mapping.map_caller import run_full_alignment
-from .preprocessing import prepare_fastq_chunks, prepare_fasta_chunks, generate_gem_indexer_iterdata, gem_indexer
+from .preprocessing import prepare_fastq_chunks, prepare_fasta_chunks, generate_gem_indexer_iterdata, prepare_gem_chunks
 from .reducer.reduce_caller import run_reducer
 
 from .pipeline import PipelineParameters, PipelineRun, Lithops, validate_parameters, new_pipeline_run
@@ -50,9 +51,8 @@ class VariantCallingPipeline:
         fasta_chunks, subStatFasta = prepare_fasta_chunks(self.parameters, self.lithops)
         self.state.fasta_chunks = fasta_chunks
 
-        iterdata = generate_gem_indexer_iterdata(self.parameters, self.state.run_id, self.state.fasta_chunks)
-        # subStat.timer_start("gem_generator")
-        timers = self.lithops.invoker.map(gem_indexer, iterdata)
+        self.state.gem_chunk_ids = prepare_gem_chunks(self.parameters, self.state.fasta_chunks, self.lithops)
+
         # subStat.timer_stop("gem_generator")
         # subStat.store_dictio(timers, "function_details", "gem_generator")
         preprocessStat.timer_stop("preprocess")
@@ -129,12 +129,18 @@ class VariantCallingPipeline:
         #     stats.load_stats_to_json(self.parameters.storage_bucket, self.parameters.log_stats_name)
 
     def clean_all(self):
+        logger.info("Going to delete all FASTQGZ Indexes")
         keys = self.lithops.storage.list_keys(
             self.parameters.storage_bucket, prefix=self.parameters.fastqgz_idx_prefix
         )
         self.lithops.storage.delete_objects(self.parameters.storage_bucket, keys)
 
+        logger.info("Going to delete all FAIDX Indexes")
         keys = self.lithops.storage.list_keys(self.parameters.storage_bucket, prefix=self.parameters.faidx_prefix)
+        self.lithops.storage.delete_objects(self.parameters.storage_bucket, keys)
+
+        logger.info("Going to delete all GEM Indexes")
+        keys = self.lithops.storage.list_keys(self.parameters.storage_bucket, prefix=self.parameters.gem_index_prefix)
         self.lithops.storage.delete_objects(self.parameters.storage_bucket, keys)
 
         # keys = self.lithops.storage.list_keys(self.parameters.storage_bucket, prefix=self.parameters.tmp_prefix)
