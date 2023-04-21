@@ -19,19 +19,26 @@ class PipelineParameters:
     Dataclass to store a pipeline's input parameters and configuration
     """
 
-    # FASTA parameters (reference genome)
+    # ---- FASTA parameters (reference genome) ----
     # Storage path for FASTA (reference genome) input file
     fasta_path: S3Path
     # Number of chunks to split FASTA input file into
     fasta_chunks: Optional[int] = None
+    # ---------------------------------------------
 
-    # FASTQ parameters (sequence read)
+    # ---- FASTQ parameters (sequence read) ----
     # Storage path for fastq input file
     fastq_path: Optional[S3Path] = None
     # SRA run accession for FASTQ sequence read input
     sra_accession: Optional[str] = None
     # Number of chunks to split fastq input file into
     fastq_chunks: Optional[int] = None
+    # ---------------------------------------------
+
+    # ---- Alignment mapper parameters ----
+    # Parallel threads for gem3-mapper, None will use as many as multiprocessing.cpu_count
+    gem_mapper_threads: Optional[int] = None
+    # -------------------------------------
 
     # Variant Calling parameters
     # TODO what is tolerance? (ask Lucio)
@@ -67,6 +74,8 @@ class PipelineParameters:
     log_level: str = "INFO"
     # Log stats
     log_stats: bool = False
+    # Debug (if true, the run ID will be 00000000-0000-0000-0000-000000000000)
+    debug: bool = False
 
 
 @dataclass
@@ -80,10 +89,15 @@ class PipelineRun:
     # Run ID
     run_id: str
 
+    # Preprocessing
     fastq_chunks = None
     fasta_chunks = None
     gem_chunk_ids = None
-    alignment_batches = None
+
+    # Alignment mapping
+    alignment_maps = None
+    corrected_indexes = None
+    aligned_mpileups = None
 
 
 @dataclass(frozen=True)
@@ -134,7 +148,10 @@ def validate_parameters(params: dict) -> PipelineParameters:
 
 
 def new_pipeline_run(pipeline_parameters: PipelineParameters) -> PipelineRun:
-    run_id = str(uuid.uuid4())
+    if pipeline_parameters.debug:
+        run_id = "00000000-0000-0000-0000-000000000000"
+    else:
+        run_id = str(uuid.uuid4())
     run = PipelineRun(parameters=pipeline_parameters, run_id=run_id)
 
     logger.info(

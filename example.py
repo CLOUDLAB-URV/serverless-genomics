@@ -12,7 +12,9 @@ if __name__ == '__main__':
         fastq_chunks=20,
         log_level=logging.DEBUG,
         storage_bucket=BUCKET,
-        log_stats=True
+        log_stats=True,
+        debug=True,
+        gem_mapper_threads=1
     )
     # pipeline.clean_all()
     # pipeline.preprocess()

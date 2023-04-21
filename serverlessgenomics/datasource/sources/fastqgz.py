@@ -214,43 +214,49 @@ def fetch_fastq_chunk_s3_fastqgzip(
     fastq_chunk: dict, target_filename: str, pipeline_parameters: PipelineParameters, storage: Storage
 ):
     tmp_index_file = tempfile.mktemp()
-    _, gzip_idx_key = get_fastqgz_idx_keys(pipeline_parameters)
+    gzip_idx_key, _ = get_fastqgz_idx_keys(pipeline_parameters)
     gztool = get_gztool_path()
     lines = []
     lines_to_read = fastq_chunk["line_1"] - fastq_chunk["line_0"] + 1
 
     try:
         t0 = time.perf_counter()
-
         # Get index and store it to temp file
-        storage.download_file(bucket=pipeline_parameters.storage_bucket, key=gzip_idx_key, file_name=tmp_index_file)
+        storage.download_file(
+            bucket=pipeline_parameters.storage_bucket,
+            key=gzip_idx_key,
+            file_name=tmp_index_file,
+        )
 
         # Get compressed byte range
-        extra_get_args = {"Range": f"bytes={fastq_chunk['range_0'] - 1}-{fastq_chunk['range_1'] - 1}"}
-        body = storage.get_object(
-            pipeline_parameters.fastq_path.bucket, pipeline_parameters.fastq_path.key, True, extra_get_args
+        input_stream = storage.get_object(
+            bucket=pipeline_parameters.fastq_path.bucket,
+            key=pipeline_parameters.fastq_path.key,
+            stream=True,
+            extra_get_args={"Range": f"bytes={fastq_chunk['range_0'] - 1}-{fastq_chunk['range_1'] - 1}"},
         )
 
         cmd = [gztool, "-I", tmp_index_file, "-n", str(fastq_chunk["range_0"]), "-L", str(fastq_chunk["line_0"])]
+        print(" ".join(cmd))
         proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
 
         # TODO program might get stuck if subprocess fails, blocking io should be done in a backgroun thread or using async/await
         def _writer_feeder():
-            logger.debug("Writer thread started")
-            input_chunk = body.read(CHUNK_SIZE)
+            print("Writer thread started")
+            input_chunk = input_stream.read(CHUNK_SIZE)
             while input_chunk != b"":
                 # logger.debug('Writing %d bytes to pipe', len(chunk))
                 try:
                     proc.stdin.write(input_chunk)
                 except BrokenPipeError:
                     break
-                input_chunk = body.read(CHUNK_SIZE)
+                input_chunk = input_stream.read(CHUNK_SIZE)
             try:
                 proc.stdin.flush()
                 proc.stdin.close()
             except BrokenPipeError:
                 pass
-            logger.debug("Writer thread finished")
+            print("Writer thread finished")
 
         writer_thread = threading.Thread(target=_writer_feeder)
         writer_thread.start()
@@ -261,10 +267,12 @@ def fetch_fastq_chunk_s3_fastqgzip(
             # logger.debug('Read %d bytes from pipe', len(chunk))
             text = output_chunk.decode("utf-8")
             chunk_lines = text.splitlines()
+
             if last_line is not None:
                 last_line = last_line + chunk_lines.pop(0)
                 lines.append(last_line)
                 last_line = None
+
             if text[-1] != "\n":
                 last_line = chunk_lines.pop()
 
@@ -290,10 +298,14 @@ def fetch_fastq_chunk_s3_fastqgzip(
         writer_thread.join()
 
         t1 = time.perf_counter()
-        logger.debug("Got partition in %.3f seconds", t1 - t0)
-        # TODO write lines to file as decompressed instead of saving them all in memory
-        with open(target_filename, "w") as target_file:
-            target_file.writelines((line + "\n" for line in lines[: fastq_chunk["line_1"] - fastq_chunk["line_0"]]))
+        print(f"Got partition in {round(t1 - t0)} seconds")
+
+        print(len(lines))
+
+        with open(target_filename, "w") as output_file:
+            for line in lines[: fastq_chunk["line_1"] - fastq_chunk["line_0"]]:
+                output_file.write(line)
+                output_file.write("\n")
     finally:
         force_delete_local_path(tmp_index_file)
 

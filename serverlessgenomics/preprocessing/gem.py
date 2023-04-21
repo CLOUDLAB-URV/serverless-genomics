@@ -34,7 +34,6 @@ def prepare_gem_chunks(pipeline_params: PipelineParameters, fasta_chunks: list[d
 
     for cached_gems_key in cached_gems_keys:
         basename = os.path.basename(cached_gems_key)
-        print(basename)
         matches = re.findall(r"\d+", basename)
         assert len(matches) == 1
         chunk_id = int(matches.pop())

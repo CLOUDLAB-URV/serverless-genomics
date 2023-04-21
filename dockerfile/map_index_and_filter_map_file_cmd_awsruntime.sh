@@ -7,6 +7,7 @@ fastq2=$3
 map_file_nosuffix=$4
 database=$5
 seq_type=$6
+threads=$7
 echo "gem-mapper / aln indexer program starting"
 echo "gem reference: "$gem_ref
 echo "fastq file: "$fastq
@@ -18,10 +19,10 @@ then
     if [ $seq_type == "single-end" ]
     then
         echo "single-end alignment - file from "$database
-        gem-mapper -I "$gem_ref" -i "$fastq" -F MAP | bash /function/bin/parse_gem_maxindex_minimapfile_stdin_v2.sh  /dev/stdin $map_file_nosuffix $seq_type
+        gem-mapper -I "$gem_ref" -i "$fastq" -F MAP -t "$threads" | bash /function/bin/parse_gem_maxindex_minimapfile_stdin_v2.sh  /dev/stdin $map_file_nosuffix $seq_type
     else
         echo "paired-end alignment - file from "$database
-        gem-mapper -I "$gem_ref" -1 "$fastq" -2 "$fastq2"  -F MAP | bash /function/bin/parse_gem_maxindex_minimapfile_stdin_v2.sh  /dev/stdin $map_file_nosuffix $seq_type
+        gem-mapper -I "$gem_ref" -1 "$fastq" -2 "$fastq2" -F MAP -t "$threads" | bash /function/bin/parse_gem_maxindex_minimapfile_stdin_v2.sh  /dev/stdin $map_file_nosuffix $seq_type
     fi
 elif  [ "$database" == "SRA" ]
 then 
@@ -29,10 +30,10 @@ then
     if [ $seq_type == "single-end" ]
     then
         echo "single-end alignment - file from "$database
-        gem-mapper -I "$gem_ref" -i "$fastq" -F MAP | bash /function/bin/parse_gem_maxindex_minimapfile_stdin_v2.sh  /dev/stdin $map_file_nosuffix $seq_type
+        gem-mapper -I "$gem_ref" -i "$fastq" -F MAP -t "$threads" | bash /function/bin/parse_gem_maxindex_minimapfile_stdin_v2.sh  /dev/stdin $map_file_nosuffix $seq_type
     else
         echo "paired-end alignment - file from "$database
-        gem-mapper -I "$gem_ref" -i "$fastq" -p -F MAP | bash /function/bin/parse_gem_maxindex_minimapfile_stdin_v2.sh  /dev/stdin $map_file_nosuffix $seq_type
+        gem-mapper -I "$gem_ref" -i "$fastq" -p -F MAP -t "$threads" | bash /function/bin/parse_gem_maxindex_minimapfile_stdin_v2.sh  /dev/stdin $map_file_nosuffix $seq_type
 
     fi
 fi
