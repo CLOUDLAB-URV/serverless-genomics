@@ -14,7 +14,9 @@ if __name__ == '__main__':
         storage_bucket=BUCKET,
         log_stats=True,
         debug=True,
-        gem_mapper_threads=1
+        gem_mapper_threads=1,
+        fasta_chunk_range=(0, 1),
+        fastq_chunk_range=(0, 3)
     )
     # pipeline.clean_all()
     # pipeline.preprocess()

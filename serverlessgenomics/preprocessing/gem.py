@@ -40,11 +40,11 @@ def prepare_gem_chunks(pipeline_params: PipelineParameters, fasta_chunks: list[d
         cached_gem_chunk_ids.append(chunk_id)
 
     cached_gem_chunk_ids = set(cached_gem_chunk_ids)
-    requested_gems_ids = set(range(pipeline_params.fasta_chunks))
+    requested_gems_ids = {fq_ch["chunk_id"] for fq_ch in fasta_chunks}
 
-    if cached_gem_chunk_ids == requested_gems_ids:
-        # All chunks are already in storage
-        logger.info('Using %d cached GEM files in storage (prefix="%s")', len(cached_gem_chunk_ids), gems_prefix)
+    if requested_gems_ids.issubset(cached_gem_chunk_ids):
+        # All requested chunks are already in storage
+        logger.info('Using %d cached GEM files in storage (prefix="%s")', len(requested_gems_ids), gems_prefix)
         return cached_gem_chunk_ids
 
     if not cached_gem_chunk_ids:

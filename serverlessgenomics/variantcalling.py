@@ -67,12 +67,12 @@ class VariantCallingPipeline:
         """
         Alignment map pipeline step
         """
-        alignReadsStat = Stats()
-        alignReadsStat.timer_start("align_reads")
-        mapper_output, subStat = run_full_alignment(self.parameters, self.state, self.lithops)
-        alignReadsStat.timer_stop("align_reads")
-        alignReadsStat.store_dictio(subStat.get_stats(), "phases", "align_reads")
-        return mapper_output, alignReadsStat
+        # alignReadsStat = Stats()
+        # alignReadsStat.timer_start("align_reads")
+        run_full_alignment(self.parameters, self.state, self.lithops)
+        # alignReadsStat.timer_stop("align_reads")
+        # alignReadsStat.store_dictio(subStat.get_stats(), "phases", "align_reads")
+        # return mapper_output, alignReadsStat
 
     def reduce(self, mapper_output):
         reduceStat = Stats()

@@ -164,7 +164,7 @@ def setup_logging(level=logging.INFO):
 
     lithops_logger.setLevel(level)
     sh = logging.StreamHandler(stream=sys.stdout)
-    sh.setLevel(logging.DEBUG)
+    sh.setLevel(logging.INFO)
     formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s - %(message)s")
     sh.setFormatter(formatter)
     lithops_logger.addHandler(sh)
