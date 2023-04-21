@@ -1,149 +1,163 @@
-import shelve
+from __future__ import annotations
+
 import logging
+from dataclasses import dataclass
+from typing import Optional, Tuple
 
 import lithops
+import uuid
 
-from .mapping.map_caller import run_full_alignment
-from .preprocessing.preprocess_fasta import prepare_fasta_chunks
-from .preprocessing.preprocess_fastq import prepare_fastq_chunks
-from .reducer.reduce_caller import run_reducer
-
-# map/reduce functions and executor
-from .cachedlithops import CachedLithopsInvoker
-
-from .parameters import PipelineRun, Lithops, validate_parameters
-from .stats import Stats
-from .constants import CACHE_PATH
-from .utils import setup_logging, log_parameters
+from .lithopswrapper import LithopsInvokerWrapper
+from .utils import S3Path, guess_sra_accession_from_fastq_path, validate_sra_accession_id
 
 logger = logging.getLogger(__name__)
 
 
-class VariantCallingPipeline:
-    def __init__(self, override_id=None, **params):
-        if override_id is not None:
-            params["override_id"] = override_id
-        self.parameters: PipelineRun = validate_parameters(params)
-        self.fastq_chunks = None
-        self.fasta_chunks = None
-        self.alignment_batches = None
-        self._setup()
+@dataclass(frozen=True)
+class PipelineParameters:
+    """
+    Dataclass to store a pipeline's input parameters and configuration
+    """
 
-    def _setup(self):
-        setup_logging(self.parameters.log_level)
-        logger.info("Init Serverless Variant Calling Pipeline")
+    # ---- FASTA parameters (reference genome) ----
+    # Storage path for FASTA (reference genome) input file
+    fasta_path: S3Path
+    # Number of chunks to split FASTA input file into
+    fasta_chunks: Optional[int] = None
+    # ---------------------------------------------
 
-        if self.parameters.log_level == logging.DEBUG:
-            log_parameters(self.parameters)
+    # ---- FASTQ parameters (sequence read) ----
+    # Storage path for fastq input file
+    fastq_path: Optional[S3Path] = None
+    # SRA run accession for FASTQ sequence read input
+    sra_accession: Optional[str] = None
+    # Number of chunks to split fastq input file into
+    fastq_chunks: Optional[int] = None
+    # ---------------------------------------------
 
-        self.lithops = Lithops(storage=lithops.storage.Storage(), invoker=CachedLithopsInvoker(self.parameters))
+    # ---- Alignment mapper parameters ----
+    # Parallel threads for gem3-mapper, None will use as many as multiprocessing.cpu_count
+    gem_mapper_threads: Optional[int] = None
+    # -------------------------------------
 
-        with shelve.open(CACHE_PATH) as cache:
-            cache[f"{self.parameters.run_id}/parameters"] = self.parameters
+    # Variant Calling parameters
+    # TODO what is tolerance? (ask Lucio)
+    tolerance: int = 0
 
-    @classmethod
-    def restore_run(cls, run_id: str):
-        self = cls.__new__(cls)
-        key = f"{run_id}/parameters"
-        with shelve.open(CACHE_PATH) as cache:
-            if key not in cache:
-                raise KeyError(f"run {run_id} not found in cache")
-            self.parameters = cache[key]
-        self._setup()
-        return self
+    # Debug parameters
+    # fastq chunks to be processed
+    fastq_chunk_range: Tuple[int, int] = None
+    # fasta chunks to be processed
+    fasta_chunk_range: Tuple[int, int] = None
+    # Skip PreProcessing Stage
+    skip_prep: bool = False
+    # Skip Map Stage
+    skip_map: bool = False
+    # Skip Reduce Stage
+    skip_reduce: bool = False
 
-    def preprocess(self):
-        """
-        Prepare requested input data for alignment
-        """
-        preprocessStat = Stats()
-        preprocessStat.timer_start("preprocess")
-        self.fastq_chunks, subStatFastq = prepare_fastq_chunks(self.parameters, self.lithops)
-        # fetch_fastq_chunk(self.fastq_chunks[0], 'test.fastq', self.lithops.storage, self.parameters.fastq_path, self.parameters.storage_bucket, self.parameters.fastqgz_idx_keys[0])
-        self.fasta_chunks, subStatFasta = prepare_fasta_chunks(self.parameters, self.lithops)
-        # fetch_fasta_chunk(self.fasta_chunks[0], 'test', self.lithops.storage, self.parameters.fasta_path)
-        preprocessStat.timer_stop("preprocess")
-        preprocessStat.store_dictio(subStatFastq.get_stats(), "subprocesses_fastq", "preprocess")
-        preprocessStat.store_dictio(subStatFasta.get_stats(), "subprocesses_fasta", "preprocess")
-        return preprocessStat
+    # Lithops settings
+    lithops_settings: dict = None
 
-    def align_reads(self):
-        """
-        Alignment map pipeline step
-        """
-        assert self.fasta_chunks is not None and self.fastq_chunks is not None, "generate chunks first!"
-        alignReadsStat = Stats()
-        alignReadsStat.timer_start("align_reads")
-        mapper_output, subStat = run_full_alignment(
-            self.parameters, self.lithops, self.fasta_chunks, self.fastq_chunks
-        )
-        alignReadsStat.timer_stop("align_reads")
-        alignReadsStat.store_dictio(subStat.get_stats(), "phases", "align_reads")
-        return mapper_output, alignReadsStat
+    # Bucket name with write permissions to store preprocessed, intermediate and output data
+    storage_bucket: str = "serverless-genomics"
+    # Prefix for storing cached fastqgz indexes
+    fastqgz_idx_prefix: str = "fastqgz-indexes/"
+    # Prefix for storing cached faidx indexes
+    faidx_prefix: str = "faidx-indexes/"
+    # Prefix for storing cached reference genome indexes
+    gem_index_prefix: str = "gem-indexes/"
+    # Prefix for output data results
+    output_prefix: str = "output/"
 
-    # TODO implement reduce stage
-    def reduce(self, mapper_output):
-        reduceStat = Stats()
-        reduceStat.timer_start("reduce")
-        subStat = run_reducer(self.parameters, self.lithops, mapper_output)
-        reduceStat.timer_stop("reduce")
-        reduceStat.store_dictio(subStat.get_stats(), "phases", "reduce")
-        return reduceStat
+    # Log level
+    log_level: str = "INFO"
+    # Log stats
+    log_stats: bool = False
+    # Debug (if true, the run ID will be 00000000-0000-0000-0000-000000000000)
+    debug: bool = False
 
-    def pipeline_stats(self):
-        stats, params = Stats(), Stats()
 
-        stats.store_size_data("fasta_path", str(self.parameters.fasta_path))
-        stats.store_size_data("fastq_path", str(self.parameters.fastq_path))
-        stats.store_size_data("fastq_chunks", self.parameters.fastq_chunks)
-        stats.store_size_data("fasta_chunks", self.parameters.fasta_chunks)
-        stats.store_size_data("run_id", str(self.parameters.run_id))
-        if self.parameters.fastq_chunk_range is not None:
-            stats.store_size_data("fastq_range", str(self.parameters.fastq_chunk_range))
+@dataclass
+class PipelineRun:
+    """
+    Dataclass to store a Pipeline execution state
+    """
 
-        stats.store_dictio(params.get_stats(), "pipeline_params")
-        return stats
+    # Run input parameters
+    parameters: PipelineParameters
+    # Run ID
+    run_id: str
 
-    def run_pipeline(self):
-        """
-        Execute all pipeline steps in order
-        """
-        stats: Stats = self.pipeline_stats()
-        stats.timer_start("pipeline")
+    # Preprocessing
+    fastq_chunks = None
+    fasta_chunks = None
+    gem_chunk_ids = None
 
-        # PreProcess Stage
-        if self.parameters.skip_prep is False:
-            preprocessStat = self.preprocess()
+    # Alignment mapping
+    alignment_maps = None
+    corrected_indexes = None
+    aligned_mpileups = None
 
-        # Map Stage
-        if self.parameters.skip_map is False:
-            mapper_output, alignReadsStat = self.align_reads()
 
-        # Reduce Stage
-        # TODO: If map phase was skipped an alternative mapper_ouput needs to be provided or generated
-        if self.parameters.skip_reduce is False:
-            reduceStat = self.reduce(mapper_output)
+@dataclass(frozen=True)
+class Lithops:
+    """
+    Dataclass to encapsulate Lithops function executor and storage clients from a single session
+    """
 
-        stats.timer_stop("pipeline")
+    storage: lithops.Storage
+    invoker: LithopsInvokerWrapper
 
-        if self.parameters.skip_prep is False:
-            stats.store_dictio(preprocessStat.get_stats(), "preprocess_phase", "pipeline")
-        if self.parameters.skip_map is False:
-            stats.store_dictio(alignReadsStat.get_stats(), "alignReads_phase", "pipeline")
-        if self.parameters.skip_reduce is False:
-            stats.store_dictio(reduceStat.get_stats(), "reduce_phase", "pipeline")
 
-        if self.parameters.log_stats:
-            stats.load_stats_to_json(self.parameters.storage_bucket, self.parameters.log_stats_name)
+def validate_parameters(params: dict) -> PipelineParameters:
+    """
+    Validate and populate missing input parameters. Returns a correct PipelineParameters
+    dataclass instance.
+    """
 
-    def clean_all(self):
-        keys = self.lithops.storage.list_keys(
-            self.parameters.storage_bucket, prefix=self.parameters.fastqgz_idx_prefix
-        )
-        self.lithops.storage.delete_objects(self.parameters.storage_bucket, keys)
+    if "fasta_path" not in params:
+        raise KeyError("fasta_path")
+    if "fasta_chunks" not in params:
+        raise KeyError("fasta_chunks")
 
-        keys = self.lithops.storage.list_keys(self.parameters.storage_bucket, prefix=self.parameters.faidx_prefix)
-        self.lithops.storage.delete_objects(self.parameters.storage_bucket, keys)
+    params["fasta_path"] = S3Path.from_uri(params["fasta_path"])
 
-        keys = self.lithops.storage.list_keys(self.parameters.storage_bucket, prefix=self.parameters.tmp_prefix)
-        self.lithops.storage.delete_objects(self.parameters.storage_bucket, keys)
+    if "fastq_path" in params:
+        # Get fastq sequence read from S3
+        params["fastq_path"] = S3Path.from_uri(params["fastq_path"])
+        sra_accession = guess_sra_accession_from_fastq_path(params["fastq_path"].as_uri())
+
+        if "sra_accession" in params and sra_accession is not None:
+            # Check if guessed SRA accession ID matches
+            assert params["sra_accession"] == sra_accession, "Specified SRA accession ID does not " "match ID in path"
+        if "sra_accession" not in params:
+            assert sra_accession is not None, "Could not guess SRA accession form fastq path, specify it explicitly"
+            logging.info("Guessed %s as SRA accession id from fastq path", sra_accession)
+            params["sra_accession"] = sra_accession
+    else:
+        # Get fastq read from SRA
+        try:
+            assert "sra_accession" in params
+            assert validate_sra_accession_id(params["sra_accession"])
+        except AssertionError as e:
+            logging.error("FASTQ S3 path or valid SRA accession ID are required")
+            raise e
+
+    return PipelineParameters(**params)
+
+
+def new_pipeline_run(pipeline_parameters: PipelineParameters) -> PipelineRun:
+    if pipeline_parameters.debug:
+        run_id = "00000000-0000-0000-0000-000000000000"
+    else:
+        run_id = str(uuid.uuid4())
+    run = PipelineRun(parameters=pipeline_parameters, run_id=run_id)
+
+    logger.info(
+        "Created new run\n######################################################\n"
+        "Pipeline Run ID = %s\n"
+        "######################################################",
+        run.run_id,
+    )
+    return run

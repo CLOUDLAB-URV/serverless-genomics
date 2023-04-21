@@ -1,1 +1,1 @@
-from .pipeline import VariantCallingPipeline
+from .variantcalling import VariantCallingPipeline

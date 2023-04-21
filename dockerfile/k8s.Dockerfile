@@ -1,5 +1,5 @@
-# Dockerfile used to create the runtime needed to execute the Genomics Pipeline
-# Example command to build: lithops runtime build -b k8s -f k8s.Dockerfile runtime_name:1
+# lambda.Dockerfile used to create the runtime needed to execute the Genomics Pipeline
+# Example command to build: lithops runtime build -b k8s -f k8s.lambda.Dockerfile runtime_name:1
 
 ########################################################
 # PYTHON 3.10

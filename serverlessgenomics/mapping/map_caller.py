@@ -1,130 +1,138 @@
-import collections
-import copy
-import logging
+from __future__ import annotations
 
-from .alignment_mapper import aligner_indexer, index_correction, filter_index_to_mpileup, gem_generator
-from ..parameters import PipelineRun, Lithops
-from ..stats import Stats
-from ..utils import split_data_result
+import collections
+import logging
+from typing import TYPE_CHECKING
+
+from .alignment_mapper import align_mapper, index_correction, filtered_index_to_mpileup
+from ..pipeline import PipelineParameters, Lithops, PipelineRun
+
+if TYPE_CHECKING:
+    from typing import Tuple
 
 logger = logging.getLogger(__name__)
 
 
-def generate_gem_generator_iterdata(pipeline_params: PipelineRun, fasta_chunks):
-    iterdata = []
-    for fa_i, fa_ch in enumerate(fasta_chunks):
-        if (pipeline_params.fasta_chunk_range is None) or (fa_i in pipeline_params.fasta_chunk_range):
-            params = {"pipeline_params": pipeline_params, "fasta_chunk_id": fa_i, "fasta_chunk": fa_ch}
-            iterdata.append(params)
-    return iterdata
+def format_align_mapper_id(fasta_chunk_id: int, fastq_chunk_id: int) -> str:
+    return "fa" + str(fasta_chunk_id).zfill(4) + "-" + "fq" + str(fastq_chunk_id).zfill(4)
 
 
-def generate_aligner_indexer_iterdata(pipeline_params: PipelineRun, fasta_chunks, fastq_chunks):
-    iterdata = []
-    for fq_i, fq_ch in enumerate(fastq_chunks):
-        if (pipeline_params.fastq_chunk_range is None) or (fq_i in pipeline_params.fastq_chunk_range):
-            for fa_i, fa_ch in enumerate(fasta_chunks):
-                if (pipeline_params.fasta_chunk_range is None) or (fa_i in pipeline_params.fasta_chunk_range):
-                    params = {
-                        "pipeline_params": pipeline_params,
-                        "fasta_chunk_id": fa_i,
-                        "fasta_chunk": fa_ch,
-                        "fastq_chunk": fq_ch,
-                        "fastq_chunk_id": fq_i,
-                    }
-                    iterdata.append(params)
-    return iterdata
+def unformat_align_mapper_id(mapper_id: str) -> Tuple[int, int]:
+    """
+    Returns tuple (fasta_chunk_id, fastq_chunk_id) from mapper formatted id
+    """
+    fa, fq = mapper_id.split("-")
+    return int(fa.replace("fa", "")), int(fq.replace("fq", ""))
 
 
-def generate_index_correction_iterdata(pipeline_params, gem_mapper_output):
-    # Group gem mapper output by fastq chunk id
-    fq_groups = collections.defaultdict(list)
-    for fq, _, map_key, _ in gem_mapper_output:
-        fq_groups[fq].append(map_key)
+def format_index_correction_mapper_id(fastq_chunk_id: int) -> str:
+    return "fq" + str(fastq_chunk_id).zfill(4)
 
+
+def unformat_index_correction_mapper_id(index_correction_mapper_id: str) -> int:
+    return int(index_correction_mapper_id.replace("fq", ""))
+
+
+def generate_align_mapping_iterdata(pipeline_params: PipelineParameters, pipeline_run: PipelineRun):
     iterdata = [
-        {"pipeline_params": pipeline_params, "fastq_chunk_id": fq_id, "map_index_keys": map_keys}
-        for fq_id, map_keys in fq_groups.items()
+        {
+            "pipeline_params": pipeline_params,
+            "run_id": pipeline_run.run_id,
+            "mapper_id": format_align_mapper_id(fa_ch["chunk_id"], fq_ch["chunk_id"]),
+            "fasta_chunk": fa_ch,
+            "fastq_chunk": fq_ch,
+        }
+        for fq_ch in pipeline_run.fastq_chunks
+        for fa_ch in pipeline_run.fasta_chunks
     ]
 
     return iterdata
 
 
-def generate_index_to_mpileup_iterdata(
-    pipeline_params, fasta_chunks, fastq_chunks, gem_mapper_output, corrected_indexes
-):
+def generate_index_correction_iterdata(pipeline_params, pipeline_run):
+    # Group gem mapper output by fastq chunk id
+    grouped_fastq_mappers = collections.defaultdict(list)
+    for mapper_id, (map_key, _) in pipeline_run.alignment_maps.items():
+        _, fastq_chunk_id = unformat_align_mapper_id(mapper_id)
+        format_index_correction_mapper_id(fastq_chunk_id)
+        grouped_fastq_mappers[fastq_chunk_id].append(map_key)
+
     iterdata = []
 
-    # Convert corrected index output (list of tuples) to sorted list by fastq chunk id
-    corrected_indexes_fq = [tup[1] for tup in sorted(corrected_indexes, key=lambda tup: tup[0])]
-
-    for fq_i, fa_i, _, filter_map_index in gem_mapper_output:
-        iterdata.append(
-            {
-                "pipeline_params": pipeline_params,
-                "fasta_chunk_id": fa_i,
-                "fasta_chunk": fasta_chunks[fa_i],
-                "fastq_chunk_id": fq_i,
-                "fastq_chunk": fastq_chunks[fq_i],
-                "filtered_map_key": filter_map_index,
-                "corrected_index_key": corrected_indexes_fq[fq_i],
-            }
-        )
+    for fq_id, map_keys in grouped_fastq_mappers.items():
+        params = {
+            "pipeline_params": pipeline_params,
+            "run_id": pipeline_run.run_id,
+            "mapper_id": format_index_correction_mapper_id(fq_id),
+            "map_index_keys": map_keys,
+        }
+        iterdata.append(params)
 
     return iterdata
 
 
-def run_full_alignment(pipeline_params: PipelineRun, lithops: Lithops, fasta_chunks, fastq_chunks):
+def generate_index_to_mpileup_iterdata(pipeline_params, pipeline_run):
+    iterdata = []
+
+    for fq_ch in pipeline_run.fastq_chunks:
+        corrected_index_key = pipeline_run.corrected_indexes[format_index_correction_mapper_id(fq_ch["chunk_id"])]
+        for fa_ch in pipeline_run.fasta_chunks:
+            mapper_id = format_align_mapper_id(fa_ch["chunk_id"], fq_ch["chunk_id"])
+            _, filtered_map_key = pipeline_run.alignment_maps[mapper_id]
+            params = {
+                "pipeline_params": pipeline_params,
+                "run_id": pipeline_run.run_id,
+                "mapper_id": mapper_id,
+                "fasta_chunk": fa_ch,
+                "filtered_map_key": filtered_map_key,
+                "corrected_index_key": corrected_index_key,
+            }
+            iterdata.append(params)
+
+    return iterdata
+
+
+def run_full_alignment(pipeline_params: PipelineParameters, pipeline_run: PipelineRun, lithops: Lithops):
     """
     Execute the map phase
-
-    Args:
-        pipeline_params (PipelineRun): pipeline arguments
-        alignment_batches (list): iterdata generated in the preprocessing stage
-        map_func (AlignmentMapper): class containing the map functions
-        num_chunks (int): number of corrections needed
-
-    Returns:
-        float: time taken to execute this phase
     """
-    subStat = Stats()
-
-    # MAP: Stage 0.1
-    logger.debug("PROCESSING GEM")
-    iterdata = generate_gem_generator_iterdata(pipeline_params, fasta_chunks)
-    subStat.timer_start("gem_generator")
-    timers = lithops.invoker.map(gem_generator, iterdata)
-    subStat.timer_stop("gem_generator")
-    subStat.store_dictio(timers, "function_details", "gem_generator")
+    # subStat = Stats()
 
     # MAP: Stage 1
     logger.debug("PROCESSING MAP: STAGE 1")
-    subStat.timer_start("aligner_indexer")
-    iterdata = generate_aligner_indexer_iterdata(pipeline_params, fasta_chunks, fastq_chunks)
-    aligner_indexer_result = lithops.invoker.map(aligner_indexer, iterdata)
-    subStat.timer_stop("aligner_indexer")
-    aligner_indexer_result, timers = split_data_result(aligner_indexer_result)
-    subStat.store_dictio(timers, "function_details", "aligner_indexer")
+    # subStat.timer_start("aligner_indexer")
+    iterdata = generate_align_mapping_iterdata(pipeline_params, pipeline_run)
+    align_mapper_result = lithops.invoker.map(align_mapper, iterdata)
+    pipeline_run.alignment_maps = {
+        mapper_id: (map_index_key, filtered_map_key)
+        for mapper_id, map_index_key, filtered_map_key in align_mapper_result
+    }
+
+    # subStat.timer_stop("aligner_indexer")
+    # align_mapper_result, timers = split_data_result(align_mapper_result)
+    # subStat.store_dictio(timers, "function_details", "aligner_indexer")
 
     # MAP: Index correction
     logger.debug("PROCESSING INDEX CORRECTION")
-    subStat.timer_start("index_correction")
+    # subStat.timer_start("index_correction")
 
-    iterdata = generate_index_correction_iterdata(pipeline_params, aligner_indexer_result)
+    iterdata = generate_index_correction_iterdata(pipeline_params, pipeline_run)
     index_correction_result = lithops.invoker.map(index_correction, iterdata)
-    subStat.timer_stop("index_correction")
-    index_correction_result, timers = split_data_result(index_correction_result)
-    subStat.store_dictio(timers, "function_details", "index_correction")
+    pipeline_run.corrected_indexes = {
+        mapper_id: corrected_index_key for mapper_id, corrected_index_key in index_correction_result
+    }
+
+    # subStat.timer_stop("index_correction")
+    # index_correction_result, timers = split_data_result(index_correction_result)
+    # subStat.store_dictio(timers, "function_details", "index_correction")
 
     # Map: Stage 2
     logger.debug("PROCESSING MAP: STAGE 2")
-    subStat.timer_start("filter_index_to_mpileup")
-    iterdata = generate_index_to_mpileup_iterdata(
-        pipeline_params, fasta_chunks, fastq_chunks, aligner_indexer_result, index_correction_result
-    )
-    alignment_output = lithops.invoker.map(filter_index_to_mpileup, iterdata)
-    subStat.timer_stop("filter_index_to_mpileup")
-    alignment_output, timers = split_data_result(alignment_output)
-    subStat.store_dictio(timers, "function_details", "filter_index_to_mpileup")
+    # subStat.timer_start("filter_index_to_mpileup")
+    iterdata = generate_index_to_mpileup_iterdata(pipeline_params, pipeline_run)
+    index_to_mpileup_result = lithops.invoker.map(filtered_index_to_mpileup, iterdata)
+    pipeline_run.aligned_mpileups = {mapper_id: mpileup_key for mapper_id, mpileup_key in index_to_mpileup_result}
 
-    return alignment_output, subStat
+    # subStat.timer_stop("filter_index_to_mpileup")
+    # alignment_output, timers = split_data_result(alignment_output)
+    # subStat.store_dictio(timers, "function_details", "filter_index_to_mpileup")

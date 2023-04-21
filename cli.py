@@ -1,5 +1,5 @@
 import argparse
-from serverlessgenomics.pipeline import VariantCallingPipeline
+from serverlessgenomics.variantcalling import VariantCallingPipeline
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Variant Caller - Cloudbutton Genomics Use Case demo')
