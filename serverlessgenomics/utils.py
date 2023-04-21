@@ -4,7 +4,6 @@ import logging
 import os
 import shutil
 import sys
-import colorlog
 
 from contextlib import suppress
 from pathlib import PurePath, _PosixFlavour

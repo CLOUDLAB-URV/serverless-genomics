@@ -6,8 +6,6 @@ from typing import TYPE_CHECKING
 
 from .alignment_mapper import align_mapper, index_correction, filtered_index_to_mpileup
 from ..pipeline import PipelineParameters, Lithops, PipelineRun
-from ..stats import Stats
-from ..utils import split_data_result
 
 if TYPE_CHECKING:
     from typing import Tuple
@@ -133,9 +131,7 @@ def run_full_alignment(pipeline_params: PipelineParameters, pipeline_run: Pipeli
     # subStat.timer_start("filter_index_to_mpileup")
     iterdata = generate_index_to_mpileup_iterdata(pipeline_params, pipeline_run)
     index_to_mpileup_result = lithops.invoker.map(filtered_index_to_mpileup, iterdata)
-    pipeline_run.aligned_mpileups = {
-        mapper_id: mpileup_key for mapper_id, mpileup_key in index_to_mpileup_result
-    }
+    pipeline_run.aligned_mpileups = {mapper_id: mpileup_key for mapper_id, mpileup_key in index_to_mpileup_result}
 
     # subStat.timer_stop("filter_index_to_mpileup")
     # alignment_output, timers = split_data_result(alignment_output)
