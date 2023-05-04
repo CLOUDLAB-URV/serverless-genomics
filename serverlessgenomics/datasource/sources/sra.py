@@ -31,16 +31,15 @@ def get_sra_metadata(pipeline_params: PipelineParameters) -> int:
 
 def fetch_fastq_chunk_sra(seq_name: str, fastq_chunk: dict, target_filename: str):
     """
-    Function to retrieve the relevant SRA chunk using fastq-dump and save it to object storage
+    Function to retrieve the relevant SRA chunk using fastq-dump and save it to the current working directory
     """
 
     start_read = int(fastq_chunk["read_0"])
     end_read = int(fastq_chunk["read_1"])
 
-    # To suppress a warning that appears the first time vdb-config is used
-    proc = subprocess.run(["vdb-config", "-i"], check=True, capture_output=True, text=True)
-    print(proc.stdout)
-    print(proc.stderr)
+    # To suppress a warning that appears the first time vdb-config is used, it will generate a config file at $HOME/.ncbi/user-settings.mkfg
+    proc = subprocess.run(["vdb-config", "-i"])
+   
     # Report cloud identity so it can take data from s3 needed to be executed only once per vm
     proc = subprocess.run(["vdb-config", "--report-cloud-identity", "yes"], check=True, capture_output=True, text=True)
     print(proc.stdout)

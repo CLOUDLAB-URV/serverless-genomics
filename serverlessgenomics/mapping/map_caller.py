@@ -102,7 +102,8 @@ def run_full_alignment(pipeline_params: PipelineParameters, pipeline_run: Pipeli
     logger.debug("PROCESSING MAP: STAGE 1")
     # subStat.timer_start("aligner_indexer")
     iterdata = generate_align_mapping_iterdata(pipeline_params, pipeline_run)
-    align_mapper_result = lithops.invoker.map(align_mapper, iterdata)
+    extra_env = {"HOME": "/tmp"}
+    align_mapper_result = lithops.invoker.map(align_mapper, iterdata, extra_env=extra_env)
     pipeline_run.alignment_maps = {
         mapper_id: (map_index_key, filtered_map_key)
         for mapper_id, map_index_key, filtered_map_key in align_mapper_result
