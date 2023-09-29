@@ -4,22 +4,22 @@
 
 1. Trypanosome 
 
-- Reference genome (FASTA, 35 MB): (Link)[https://tritrypdb.org/tritrypdb/app/downloads/Current_Release/TbruceiTREU927/fasta/data/]
+- Reference genome (FASTA, 35 MB): [Link](https://tritrypdb.org/tritrypdb/app/downloads/Current_Release/TbruceiTREU927/fasta/data/)
 - Sequence Reads:
-    * SRR6052133* (FASTQGZip, 668 MB): (Link)[https://trace.ncbi.nlm.nih.gov/Traces/?view=run_browser&acc=SRR6052133&display=download]
+    * SRR6052133* (FASTQGZip, 668 MB): [Link](https://trace.ncbi.nlm.nih.gov/Traces/?view=run_browser&acc=SRR6052133&display=download)
 
 2. Human
 
-- Reference genome (FASTA GZip, 905 MB): (Link)[http://hgdownload.cse.ucsc.edu/goldenpath/hg19/bigZips/]
+- Reference genome (FASTA GZip, 905 MB): [Link](http://hgdownload.cse.ucsc.edu/goldenpath/hg19/bigZips/)
 - Sequence Reads:
-    * SRR15068323 (FASTQGZip, 1.2 GB): (Link)[https://trace.ncbi.nlm.nih.gov/Traces/?view=run_browser&acc=SRR15068323&display=data-access]
-    * ERR9856489 (FASTQGZip, 12.1 GB): (Link)[https://trace.ncbi.nlm.nih.gov/Traces/?view=run_browser&acc=ERR9856489&display=data-access]
+    * SRR15068323 (FASTQGZip, 1.2 GB): [Link](https://trace.ncbi.nlm.nih.gov/Traces/?view=run_browser&acc=SRR15068323&display=data-access)
+    * ERR9856489 (FASTQGZip, 12.1 GB): [Link](https://trace.ncbi.nlm.nih.gov/Traces/?view=run_browser&acc=ERR9856489&display=data-access)
 
 3. Bos taurus
 
-- Reference genome (FASTA GZip, 781 MB): (Link)[https://www.ensembl.org/Bos_taurus/Info/Index]
+- Reference genome (FASTA GZip, 781 MB): [Link](https://www.ensembl.org/Bos_taurus/Info/Index)
 - Sequence Reads:
-    * SRR934415* (FASTQGZip, 16.5 GB): (Link)[https://trace.ncbi.nlm.nih.gov/Traces/?view=run_browser&acc=SRR934415&display=data-access]
+    * SRR934415* (FASTQGZip, 16.5 GB): [Link](https://trace.ncbi.nlm.nih.gov/Traces/?view=run_browser&acc=SRR934415&display=data-access)
 
 
 \*The pipeline currently support only single-end sequences. Use only the first sequence for paired-end reads.
