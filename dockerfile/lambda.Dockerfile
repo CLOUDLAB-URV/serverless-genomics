@@ -6,7 +6,7 @@
 ########################################################
 ARG FUNCTION_DIR="/function"
 ARG BINS_DIR="/function/bin"
-FROM python:3.8-slim-buster
+FROM python:3.10-slim-buster
 ARG FUNCTION_DIR
 ARG BINS_DIR
 
@@ -14,28 +14,28 @@ ARG BINS_DIR
 # LINUX PACKAGES
 ########################################################
 RUN apt-get update && apt-get install -y \
-        zip \
-        g++ \
-        gcc \
-        make \
-        cmake \
-        autoconf \
-        automake \
-        unzip \
-        perl \
-        git \
-        wget \
-        libssl-dev \
-        libncurses5-dev \
-        zlib1g-dev \
-        libxslt-dev \
-        libxml2-dev \
-        zlib1g-dev \
-        liblzma-dev \
-        libbz2-dev \
-        gawk \
-        && rm -rf /var/lib/apt/lists/* \
-        && apt-cache search linux-headers-generic
+    zip \
+    g++ \
+    gcc \
+    make \
+    cmake \
+    autoconf \
+    automake \
+    unzip \
+    perl \
+    git \
+    wget \
+    libssl-dev \
+    libncurses5-dev \
+    zlib1g-dev \
+    libxslt-dev \
+    libxml2-dev \
+    zlib1g-dev \
+    liblzma-dev \
+    libbz2-dev \
+    gawk \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-cache search linux-headers-generic
 
 ########################################################
 # COMPILE SOME OF THE TOOLS NEEDED
@@ -70,7 +70,7 @@ RUN wget https://github.com/circulosmeos/gztool/archive/refs/tags/v1.4.2.zip \
 
 # Compile fastq-dump
 RUN wget https://ftp-trace.ncbi.nlm.nih.gov/sra/sdk/3.0.0/sratoolkit.3.0.0-ubuntu64.tar.gz \
-	&& tar zxvf sratoolkit.3.0.0-ubuntu64.tar.gz  \
+    && tar zxvf sratoolkit.3.0.0-ubuntu64.tar.gz  \
     && cd /sratoolkit.3.0.0-ubuntu64/bin \
     && mv * ${BINS_DIR}
 
@@ -83,22 +83,22 @@ RUN apt-get update  \
 ########################################################
 RUN pip install --upgrade --ignore-installed pip wheel six setuptools \
     && pip install --upgrade --no-cache-dir --ignore-installed \
-        awslambdaric \
-        boto3 \
-        redis \
-        httplib2 \
-        requests \
-        numpy \
-        scipy \
-        pandas \
-        pika \
-        kafka-python \
-        cloudpickle \
-        ps-mem \
-        tblib \
-        # Pipeline specific
-        pyarrow \
-        fastparquet
+    awslambdaric \
+    boto3 \
+    redis \
+    httplib2 \
+    requests \
+    numpy \
+    scipy \
+    pandas \
+    pika \
+    kafka-python \
+    cloudpickle \
+    ps-mem \
+    tblib \
+    # Pipeline specific
+    pyarrow \
+    fastparquet
 
 ########################################################
 # SCRIPTS

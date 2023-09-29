@@ -4,7 +4,6 @@ import logging
 from typing import TYPE_CHECKING
 
 from ..datasource.sources.fasta import generate_faidx_from_s3, get_fasta_byte_ranges
-from ..stats import Stats
 
 if TYPE_CHECKING:
     from ..pipeline import PipelineParameters, Lithops
@@ -16,19 +15,19 @@ def prepare_fasta_chunks(pipeline_params: PipelineParameters, lithops: Lithops):
     """
     Calculate fasta byte ranges and metadata for chunks of a pipeline run, generate faidx index if needed
     """
-    subStat = Stats()
     # Get number of sequences from fasta file, generate faidx file if needed
-    subStat.timer_start("prepare_fasta_chunks")
-    num_sequences = generate_faidx_from_s3(pipeline_params, lithops, subStat)
+    num_sequences = generate_faidx_from_s3(pipeline_params, lithops)
     fasta_chunks = get_fasta_byte_ranges(pipeline_params, lithops, num_sequences)
 
     if pipeline_params.fasta_chunk_range is not None:
         # Compute only specified FASTA chunk range
         r0, r1 = pipeline_params.fasta_chunk_range
-        logger.info("Using only FASTA chunks in range %s", pipeline_params.fasta_chunk_range.__repr__())
+        logger.info(
+            "Using only FASTA chunks in range %s",
+            pipeline_params.fasta_chunk_range.__repr__(),
+        )
         fasta_chunks = fasta_chunks[r0:r1]
 
     logger.info("Generated %d chunks for %s", len(fasta_chunks), pipeline_params.fasta_path.as_uri())
-    subStat.timer_stop("prepare_fasta_chunks")
 
-    return fasta_chunks, subStat
+    return fasta_chunks

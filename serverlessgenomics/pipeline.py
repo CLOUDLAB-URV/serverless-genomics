@@ -8,7 +8,11 @@ import lithops
 import uuid
 
 from .lithopswrapper import LithopsInvokerWrapper
-from .utils import S3Path, guess_sra_accession_from_fastq_path, validate_sra_accession_id
+from .utils import (
+    S3Path,
+    guess_sra_accession_from_fastq_path,
+    validate_sra_accession_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -72,10 +76,6 @@ class PipelineParameters:
 
     # Log level
     log_level: str = "INFO"
-    # Log stats
-    log_stats: bool = False
-    # Debug (if true, the run ID will be 00000000-0000-0000-0000-000000000000)
-    debug: bool = False
 
 
 @dataclass
@@ -147,15 +147,14 @@ def validate_parameters(params: dict) -> PipelineParameters:
     return PipelineParameters(**params)
 
 
-def new_pipeline_run(pipeline_parameters: PipelineParameters) -> PipelineRun:
-    if pipeline_parameters.debug:
-        run_id = "00000000-0000-0000-0000-000000000000"
-    else:
+def new_pipeline_run(pipeline_parameters: PipelineParameters, run_id: str) -> PipelineRun:
+    if run_id is None:
         run_id = str(uuid.uuid4())
     run = PipelineRun(parameters=pipeline_parameters, run_id=run_id)
 
     logger.info(
-        "Created new run\n######################################################\n"
+        "\n"
+        "######################################################\n"
         "Pipeline Run ID = %s\n"
         "######################################################",
         run.run_id,

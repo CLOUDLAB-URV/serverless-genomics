@@ -139,7 +139,13 @@ def try_head_object(storage: lithops.Storage, bucket: str, key: str):
         return None
 
 
-def try_get_object(storage: lithops.Storage, bucket: str, key: str, stream: bool = False, extra_get_args: dict = None):
+def try_get_object(
+    storage: lithops.Storage,
+    bucket: str,
+    key: str,
+    stream: bool = False,
+    extra_get_args: dict = None,
+):
     try:
         res = storage.get_object(bucket, key, stream, extra_get_args)
         return res

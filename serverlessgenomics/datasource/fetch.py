@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import re
+import math
+from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING
 
 from .datasources import FASTQSource
@@ -14,7 +16,12 @@ if TYPE_CHECKING:
 from ..pipeline import PipelineParameters
 
 
-def fetch_fastq_chunk(pipeline_params: PipelineParameters, fastq_chunk: dict, target_filename: str, storage: Storage):
+def fetch_fastq_chunk(
+    pipeline_params: PipelineParameters,
+    fastq_chunk: dict,
+    target_filename: str,
+    storage: Storage,
+):
     assert "source" in fastq_chunk
     if fastq_chunk["source"] == FASTQSource.S3_GZIP:
         fetch_fastq_chunk_s3_fastqgzip(fastq_chunk, target_filename, pipeline_params, storage)
@@ -40,7 +47,10 @@ def fetch_fasta_chunk(fasta_chunk: dict, target_filename: str, storage: Storage,
 
 
 def fetch_gem_chunk(
-    pipeline_parameters: PipelineParameters, fasta_chunk: dict, target_filename: str, storage: Storage
+    pipeline_parameters: PipelineParameters,
+    fasta_chunk: dict,
+    target_filename: str,
+    storage: Storage,
 ):
     key = get_gem_chunk_storage_key(pipeline_parameters, fasta_chunk["chunk_id"])
     storage.download_file(bucket=pipeline_parameters.storage_bucket, key=key, file_name=target_filename)

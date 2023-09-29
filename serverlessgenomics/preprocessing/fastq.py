@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Set
 from ..datasource.sources.fastqgz import check_fastqgz_index, get_ranges_from_line_pairs
 from ..datasource.sources.sra import get_sra_metadata
 from ..datasource.datasources import FASTQSource
-from ..stats import Stats
 
 if TYPE_CHECKING:
     from ..pipeline import PipelineParameters, Lithops
@@ -19,8 +18,6 @@ def prepare_fastq_chunks(pipeline_params: PipelineParameters, lithops: Lithops):
     """
     Generate FASTQ chunks metadata
     """
-    subStat = Stats()
-    subStat.timer_start("prepare_fastq_chunks")
     if pipeline_params.fastq_path is not None:
         # FASTQ source is S3
         num_lines = check_fastqgz_index(pipeline_params, lithops)
@@ -42,7 +39,9 @@ def prepare_fastq_chunks(pipeline_params: PipelineParameters, lithops: Lithops):
 
         # Get byte ranges from line pairs using GZip index
         logger.info(
-            "Calculating byte ranges of %s for %d chunks...", pipeline_params.fastq_path, pipeline_params.fastq_chunks
+            "Calculating byte ranges of %s for %d chunks...",
+            pipeline_params.fastq_path,
+            pipeline_params.fastq_chunks,
         )
         byte_ranges = lithops.invoker.call(get_ranges_from_line_pairs, (pipeline_params, line_pairs))
         fastq_chunks = [
@@ -57,7 +56,6 @@ def prepare_fastq_chunks(pipeline_params: PipelineParameters, lithops: Lithops):
             for i, ((line_0, line_1), (range_0, range_1)) in enumerate(zip(line_pairs, byte_ranges))
         ]
         logger.info("Generated %d chunks for %s", len(fastq_chunks), pipeline_params.fastq_path)
-        subStat.timer_stop("prepare_fastq_chunks")
     elif pipeline_params.sra_accession is not None:
         # fastq-dump works by number of reads, number of lines = number of reads * 4
         num_reads = get_sra_metadata(pipeline_params)
@@ -73,17 +71,24 @@ def prepare_fastq_chunks(pipeline_params: PipelineParameters, lithops: Lithops):
             read_pairs[-1] = (l0, num_reads)
 
         fastq_chunks = [
-            {"source": FASTQSource.SRA, "chunk_id": i, "read_0": read_0, "read_1": read_1}
+            {
+                "source": FASTQSource.SRA,
+                "chunk_id": i,
+                "read_0": read_0,
+                "read_1": read_1,
+            }
             for i, (read_0, read_1) in enumerate(read_pairs)
         ]
-        subStat.timer_stop("prepare_fastq_chunks")
     else:
         raise Exception("fastq reference required")
 
     if pipeline_params.fastq_chunk_range is not None:
         # Compute only specified FASTQ chunk range
         r0, r1 = pipeline_params.fastq_chunk_range
-        logger.info("Using only FASTQ chunks in range %s", pipeline_params.fastq_chunk_range.__repr__())
+        logger.info(
+            "Using only FASTQ chunks in range %s",
+            pipeline_params.fastq_chunk_range.__repr__(),
+        )
         fastq_chunks = fastq_chunks[r0:r1]
 
-    return fastq_chunks, subStat
+    return fastq_chunks

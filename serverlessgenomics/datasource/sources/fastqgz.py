@@ -13,8 +13,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
-from serverlessgenomics.pipeline import PipelineParameters, Lithops
-from serverlessgenomics.utils import try_head_object, S3Path, force_delete_local_path
+from ...pipeline import PipelineParameters, Lithops
+from ...utils import try_head_object, S3Path, force_delete_local_path
 
 if TYPE_CHECKING:
     from typing import Tuple, List
@@ -34,7 +34,11 @@ def check_fastqgz_index(pipeline_params: PipelineParameters, lithops: Lithops) -
     Returns number of lines of FASTQ file.
     """
     # Check if fastqgz file exists
-    fastq_head = try_head_object(lithops.storage, pipeline_params.fastq_path.bucket, pipeline_params.fastq_path.key)
+    fastq_head = try_head_object(
+        lithops.storage,
+        pipeline_params.fastq_path.bucket,
+        pipeline_params.fastq_path.key,
+    )
     if fastq_head is None:
         raise Exception(f"FASTQGZip file with key {pipeline_params.fastq_path} does not exist")
 
@@ -45,11 +49,15 @@ def check_fastqgz_index(pipeline_params: PipelineParameters, lithops: Lithops) -
     if None in (fastq_idx_head, fastq_tab_head):
         # Generate gzip index file for compressed fastq input
         logger.info("Generating gzip index file for FASTQ %s", pipeline_params.fastq_path.stem)
-        total_lines = lithops.invoker.call(generate_idx_from_gzip, (pipeline_params, pipeline_params.fastq_path))
+        total_lines, idx_sz, tab_sz = lithops.invoker.call(
+            generate_idx_from_gzip, (pipeline_params, pipeline_params.fastq_path)
+        )
     else:
         # Get total lines from header metadata
         logger.debug("FASTQGZip index for %s found", pipeline_params.fastq_path.stem)
         total_lines = int(fastq_tab_head["x-amz-meta-total_lines"])
+        idx_sz = fastq_idx_head["content-length"]
+        tab_sz = fastq_tab_head["content-length"]
 
     return total_lines
 
@@ -67,10 +75,8 @@ def generate_idx_from_gzip(pipeline_params: PipelineParameters, gzip_file_path: 
         data_stream = storage.get_object(bucket=gzip_file_path.bucket, key=gzip_file_path.key, stream=True)
 
         force_delete_local_path(tmp_index_file_name)
-        t0 = time.perf_counter()
-
         # Create index and save to tmp file
-        # TODO tmp file is needed, sending to stdout is not working at the moment (todo fix)
+        # tmp file is needed, sending to stdout is not working at the moment (todo fix)
         index_proc = subprocess.Popen(
             [gztool, "-i", "-x", "-I", tmp_index_file_name],
             stdin=subprocess.PIPE,
@@ -78,8 +84,8 @@ def generate_idx_from_gzip(pipeline_params: PipelineParameters, gzip_file_path: 
             stderr=subprocess.PIPE,
         )
 
-        # TODO program might get stuck if subprocess fails, blocking io should be done in a backgroun thread or using
-        #  async/await
+        # program might get stuck if subprocess fails, blocking io should be done in a background thread or using
+        # async/await
         try:
             chunk = data_stream.read(CHUNK_SIZE)
             while chunk != b"":
@@ -118,12 +124,12 @@ def generate_idx_from_gzip(pipeline_params: PipelineParameters, gzip_file_path: 
             bucket=pipeline_params.storage_bucket,
             key=gzip_idx_key,
         )
+        idx_sz = os.stat(tmp_index_file_name).st_size
 
         # Get the total number of lines
         total_lines = int(RE_NUMS.findall(RE_NLINES.findall(output).pop()).pop())
         logger.debug("Indexed gzipped text file with %s total lines", total_lines)
-        t1 = time.perf_counter()
-        logger.debug("Index generated in %.3f seconds", t1 - t0)
+        logger.debug("Index generated in %.3f seconds")
 
         # Generator function that parses output to avoid copying all window data as lists
         def _lines_generator():
@@ -150,8 +156,7 @@ def generate_idx_from_gzip(pipeline_params: PipelineParameters, gzip_file_path: 
         df.to_parquet(out_stream, engine="pyarrow")
         # df.to_csv(os.path.join(tempfile.gettempdir(), f'{meta.obj_path.stem}.csv'))  # debug
 
-        os.remove(tmp_index_file_name)
-
+        tab_sz = out_stream.tell()
         out_stream.seek(0)
         storage.get_client().upload_fileobj(
             Bucket=pipeline_params.storage_bucket,
@@ -160,12 +165,16 @@ def generate_idx_from_gzip(pipeline_params: PipelineParameters, gzip_file_path: 
             ExtraArgs={"Metadata": {"total_lines": str(total_lines)}},
         )
 
-        return total_lines
+        return total_lines, idx_sz, tab_sz
     finally:
         force_delete_local_path(tmp_index_file_name)
 
 
 def get_ranges_from_line_pairs(pipeline_params: PipelineParameters, pairs: List[Tuple[int, int]], storage: Storage):
+    """
+    Lithops callee function
+    Returns byte ranges to decompress a FASTQGZip using gztool for each pair of lines requested
+    """
     _, gzip_tab_key = get_fastqgz_idx_keys(pipeline_params)
 
     # Download gzip tab into an in-memory buffer and read dataframe into Pandas
@@ -211,7 +220,10 @@ def get_ranges_from_line_pairs(pipeline_params: PipelineParameters, pairs: List[
 
 
 def fetch_fastq_chunk_s3_fastqgzip(
-    fastq_chunk: dict, target_filename: str, pipeline_parameters: PipelineParameters, storage: Storage
+    fastq_chunk: dict,
+    target_filename: str,
+    pipeline_parameters: PipelineParameters,
+    storage: Storage,
 ):
     tmp_index_file = tempfile.mktemp()
     gzip_idx_key, _ = get_fastqgz_idx_keys(pipeline_parameters)
@@ -236,7 +248,15 @@ def fetch_fastq_chunk_s3_fastqgzip(
             extra_get_args={"Range": f"bytes={fastq_chunk['range_0'] - 1}-{fastq_chunk['range_1'] - 1}"},
         )
 
-        cmd = [gztool, "-I", tmp_index_file, "-n", str(fastq_chunk["range_0"]), "-L", str(fastq_chunk["line_0"])]
+        cmd = [
+            gztool,
+            "-I",
+            tmp_index_file,
+            "-n",
+            str(fastq_chunk["range_0"]),
+            "-L",
+            str(fastq_chunk["line_0"]),
+        ]
         print(" ".join(cmd))
         proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
 

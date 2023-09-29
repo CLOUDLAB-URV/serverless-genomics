@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 import lithops
+
 
 logger = logging.getLogger(__name__)
 
@@ -13,9 +15,25 @@ class LithopsInvokerWrapper:
         self.__fexec = lithops.FunctionExecutor(**config)
 
     def call(
-        self, func, data, /, extra_env=None, runtime_memory=None, timeout=None, include_modules=[], exclude_modules=[]
+        self,
+        func,
+        data,
+        /,
+        extra_env=None,
+        runtime_memory=None,
+        timeout=None,
+        include_modules=[],
+        exclude_modules=[],
     ):
-        fut = self.__fexec.call_async(func, data, extra_env, runtime_memory, timeout, include_modules, exclude_modules)
+        fut = self.__fexec.call_async(
+            func,
+            data,
+            extra_env,
+            runtime_memory,
+            timeout,
+            include_modules,
+            exclude_modules,
+        )
         result = self.__fexec.get_result(fs=fut)
         return result
 
@@ -48,8 +66,8 @@ class LithopsInvokerWrapper:
             include_modules,
             exclude_modules,
         )
-        res = self.__fexec.get_result(fs=fut)
-        return res
+        result = self.__fexec.get_result(fs=fut)
+        return result
 
     def map_reduce(
         self,

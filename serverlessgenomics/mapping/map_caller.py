@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from .alignment_mapper import align_mapper, index_correction, filtered_index_to_mpileup
 from ..pipeline import PipelineParameters, Lithops, PipelineRun
+from ..stats import Stats
 
 if TYPE_CHECKING:
     from typing import Tuple
@@ -96,43 +97,39 @@ def run_full_alignment(pipeline_params: PipelineParameters, pipeline_run: Pipeli
     """
     Execute the map phase
     """
-    # subStat = Stats()
+    stats = Stats()
 
     # MAP: Stage 1
     logger.debug("PROCESSING MAP: STAGE 1")
-    # subStat.timer_start("aligner_indexer")
     iterdata = generate_align_mapping_iterdata(pipeline_params, pipeline_run)
-    align_mapper_result = lithops.invoker.map(align_mapper, iterdata)
+    with stats.timeit("align_mapper"):
+        results = lithops.invoker.map(align_mapper, iterdata)
+    align_mapper_result, align_mapper_stats = zip(*results)
     pipeline_run.alignment_maps = {
         mapper_id: (map_index_key, filtered_map_key)
         for mapper_id, map_index_key, filtered_map_key in align_mapper_result
     }
-
-    # subStat.timer_stop("aligner_indexer")
-    # align_mapper_result, timers = split_data_result(align_mapper_result)
-    # subStat.store_dictio(timers, "function_details", "aligner_indexer")
+    stats.set_value("align_mapper_stats", [s.dump_dict() for s in align_mapper_stats])
 
     # MAP: Index correction
     logger.debug("PROCESSING INDEX CORRECTION")
-    # subStat.timer_start("index_correction")
 
     iterdata = generate_index_correction_iterdata(pipeline_params, pipeline_run)
-    index_correction_result = lithops.invoker.map(index_correction, iterdata)
+    with stats.timeit("index_correction"):
+        result = lithops.invoker.map(index_correction, iterdata)
+    index_correction_result, index_correction_stats = zip(*result)
     pipeline_run.corrected_indexes = {
         mapper_id: corrected_index_key for mapper_id, corrected_index_key in index_correction_result
     }
-
-    # subStat.timer_stop("index_correction")
-    # index_correction_result, timers = split_data_result(index_correction_result)
-    # subStat.store_dictio(timers, "function_details", "index_correction")
+    stats.set_value("index_correction_stats", [s.dump_dict() for s in index_correction_stats])
 
     # Map: Stage 2
     logger.debug("PROCESSING MAP: STAGE 2")
-    # subStat.timer_start("filter_index_to_mpileup")
     iterdata = generate_index_to_mpileup_iterdata(pipeline_params, pipeline_run)
-    index_to_mpileup_result = lithops.invoker.map(filtered_index_to_mpileup, iterdata)
+    with stats.timeit("filtered_index_to_mpileup"):
+        results = lithops.invoker.map(filtered_index_to_mpileup, iterdata)
+    index_to_mpileup_result, index_to_mpileup_stats = zip(*results)
     pipeline_run.aligned_mpileups = {mapper_id: mpileup_key for mapper_id, mpileup_key in index_to_mpileup_result}
+    stats.set_value("filtered_index_to_mpileup_stats", [s.dump_dict() for s in index_to_mpileup_stats])
 
-    # subStat.timer_stop("filter_index_to_mpileup")
-    # alignment_output, timers = split_data_result(alignment_output)
-    # subStat.store_dictio(timers, "function_details", "filter_index_to_mpileup")
+    return stats

@@ -23,7 +23,11 @@ def get_sra_metadata(pipeline_params: PipelineParameters) -> int:
 
         for run in root.iter("RUN"):
             reads = int(run.get("total_spots"))
-            logger.debug("Read %d total reads from efetch for sequence %s", reads, pipeline_params.sra_accession)
+            logger.debug(
+                "Read %d total reads from efetch for sequence %s",
+                reads,
+                pipeline_params.sra_accession,
+            )
             return reads
     else:
         raise Exception(f"Error fetching metadata for {pipeline_params.sra_accession}: {response.status_code}")
@@ -42,13 +46,26 @@ def fetch_fastq_chunk_sra(seq_name: str, fastq_chunk: dict, target_filename: str
     print(proc.stdout)
     print(proc.stderr)
     # Report cloud identity so it can take data from s3 needed to be executed only once per vm
-    proc = subprocess.run(["vdb-config", "--report-cloud-identity", "yes"], check=True, capture_output=True, text=True)
+    proc = subprocess.run(
+        ["vdb-config", "--report-cloud-identity", "yes"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
     print(proc.stdout)
     print(proc.stderr)
 
     # Run fastq-dump with the specified range of reads, splits files in two files if paired end
     proc = subprocess.run(
-        ["fastq-dump", "--split-files", seq_name, "-X", str(start_read), "-N", str(end_read)],
+        [
+            "fastq-dump",
+            "--split-files",
+            seq_name,
+            "-X",
+            str(start_read),
+            "-N",
+            str(end_read),
+        ],
         check=True,
         capture_output=True,
         text=True,

@@ -16,11 +16,10 @@ from ..datasource import fetch_fasta_chunk, fetch_fastq_chunk
 from ..datasource.fetch import fetch_gem_chunk
 from ..utils import force_delete_local_path, get_storage_tmp_prefix
 from ..pipeline import PipelineParameters
+from ..stats import Stats
 from lithops import Storage
 from lithops.storage.utils import StorageNoSuchKeyError
 import zipfile
-
-from ..stats import Stats
 
 logger = logging.getLogger(__name__)
 
@@ -39,13 +38,13 @@ def align_mapper(
     are uploaded into the cloud storage for subsequent index correction, after which
     the final part of the map function (map_alignment2) can be executed.
     """
-    stat, timestamps, data_size = Stats(), Stats(), Stats()
-    timestamps.store_size_data("start", time())
+    print("starting align_mapper")
+    stats = Stats()
+    stats.set_value("mapper_id", mapper_id)
+    stats.start_timer("function")
 
     # tmp prefix generator for this mapper
     mapper_storage_tmp_prefix = partial(get_storage_tmp_prefix, run_id, "align_mapper", mapper_id)
-
-    stat.timer_start(mapper_id)
 
     map_index_key = mapper_storage_tmp_prefix(pipeline_params.sra_accession + "_map.index.txt.bz2")
     filtered_map_key = mapper_storage_tmp_prefix(pipeline_params.sra_accession + "_filt_wline_no.map.bz2")
@@ -55,8 +54,8 @@ def align_mapper(
         storage.head_object(bucket=pipeline_params.storage_bucket, key=map_index_key)
         storage.head_object(bucket=pipeline_params.storage_bucket, key=filtered_map_key)
         # If they exist, return the keys and skip computing this chunk
-        stat.timer_stop(mapper_id)
-        return mapper_id, map_index_key, filtered_map_key
+        stats.stop_timer("function")
+        return (mapper_id, map_index_key, filtered_map_key), stats
     except StorageNoSuchKeyError:
         # If any output is missing, proceed
         pass
@@ -68,32 +67,22 @@ def align_mapper(
     print("Working directory: ", os.getcwd())
     try:
         # Get fastq chunk and store it to disk in tmp directory
-        timestamps.store_size_data("download_fastq", time())
         fastq_chunk_filename = f"chunk_{fastq_chunk['chunk_id']}.fastq"
-        fetch_fastq_chunk(pipeline_params, fastq_chunk, fastq_chunk_filename, storage)
-
-        data_size.store_size_data(fastq_chunk_filename, os.path.getsize(fastq_chunk_filename) / (1024 * 1024))
-
-        # Get fasta chunk and store it to disk in tmp directory
-        # timestamps.store_size_data("download_fasta", time())
-        # fasta_chunk_filename = f"chunk_{fasta_chunk['chunk_id']}.fasta"
-        # fetch_fasta_chunk(fasta_chunk, fasta_chunk_filename, storage, pipeline_params.fasta_path)
-        # data_size.store_size_data(fasta_chunk_filename, os.path.getsize(fasta_chunk_filename) / (1024 * 1024))
+        with stats.timeit("fetch_fastq_chunk"):
+            fetch_fastq_chunk(pipeline_params, fastq_chunk, fastq_chunk_filename, storage)
+        stats.set_value("fastq_chunk_size", os.path.getsize(fastq_chunk_filename))
 
         # Fetch gem file and store it to disk in tmp directory
-        timestamps.store_size_data("download_gem", time())
-
         gem_index_filename = os.path.join(f"chunk_{fasta_chunk['chunk_id']}.gem")
-        fetch_gem_chunk(pipeline_params, fasta_chunk, gem_index_filename, storage)
-
-        data_size.store_size_data(gem_index_filename, os.path.getsize(gem_index_filename) / (1024 * 1024))
+        with stats.timeit("fetch_gem_chunk"):
+            fetch_gem_chunk(pipeline_params, fasta_chunk, gem_index_filename, storage)
+        stats.set_value("gem_chunk_size", os.path.getsize(gem_index_filename))
 
         # GENERATE ALIGNMENT AND ALIGNMENT INDEX (FASTQ TO MAP)
         # TODO refactor bash script
         # TODO support implement paired-end, replace not-used with 2nd fastq chunk
         # TODO use proper tmp directory instead of uuid base name
 
-        timestamps.store_size_data("map_index_and_filter_map", time())
         # s3 or SRA works the same for the script /function/bin/map_index_and_filter_map_file_cmd_awsruntime.sh on single end sequences.
         cmd = [
             "/function/bin/map_index_and_filter_map_file_cmd_awsruntime.sh",
@@ -106,7 +95,8 @@ def align_mapper(
             str(pipeline_params.gem_mapper_threads or multiprocessing.cpu_count()),
         ]
         print(" ".join(cmd))
-        out = sp.run(cmd, capture_output=True)
+        with stats.timeit("map_index_and_filter"):
+            out = sp.run(cmd, capture_output=True)
         print(out.stdout.decode("utf-8"))
         print(os.listdir())
 
@@ -114,44 +104,47 @@ def align_mapper(
         map_index_filename = os.path.join(tmp_dir, pipeline_params.sra_accession + "_map.index.txt")
         shutil.move(pipeline_params.sra_accession + "_map.index.txt", map_index_filename)
         filtered_map_filename = os.path.join(
-            tmp_dir, pipeline_params.sra_accession + "_" + str(mapper_id) + "_filt_wline_no.map"
+            tmp_dir,
+            pipeline_params.sra_accession + "_" + str(mapper_id) + "_filt_wline_no.map",
         )
         shutil.move(pipeline_params.sra_accession + "_filt_wline_no.map", filtered_map_filename)
+        stats.set_value("map_index_size", os.path.getsize(map_index_filename))
+        stats.set_value("filtered_map_size", os.path.getsize(filtered_map_filename))
 
         # Compress outputs
-        timestamps.store_size_data("compress_index", time())
         zipped_map_index_filename = map_index_filename + ".bz2"
-        with zipfile.ZipFile(zipped_map_index_filename, "w", compression=zipfile.ZIP_BZIP2, compresslevel=9) as zf:
+        with zipfile.ZipFile(
+            zipped_map_index_filename,
+            "w",
+            compression=zipfile.ZIP_BZIP2,
+            compresslevel=9,
+        ) as zf:
             zf.write(map_index_filename, arcname=PurePosixPath(map_index_filename).name)
+        stats.set_value("zipped_map_index_size", os.path.getsize(zipped_map_index_filename))
 
-        timestamps.store_size_data("compress_map", time())
         zipped_filtered_map_filename = filtered_map_filename + ".bz2"
-        with zipfile.ZipFile(zipped_filtered_map_filename, "w", compression=zipfile.ZIP_BZIP2, compresslevel=9) as zf:
+        with zipfile.ZipFile(
+            zipped_filtered_map_filename,
+            "w",
+            compression=zipfile.ZIP_BZIP2,
+            compresslevel=9,
+        ) as zf:
             zf.write(filtered_map_filename, arcname=PurePosixPath(filtered_map_filename).name)
+        stats.set_value("zipped_filtered_map_size", os.path.getsize(zipped_filtered_map_filename))
 
         # Copy result files to storage for index correction
-        timestamps.store_size_data("upload_index", time())
-        storage.upload_file(
-            file_name=zipped_map_index_filename, bucket=pipeline_params.storage_bucket, key=map_index_key
-        )
-        data_size.store_size_data(
-            zipped_map_index_filename, os.path.getsize(zipped_map_index_filename) / (1024 * 1024)
-        )
+        with stats.timeit("upload_map_index"):
+            storage.upload_file(
+                file_name=zipped_map_index_filename, bucket=pipeline_params.storage_bucket, key=map_index_key
+            )
 
-        timestamps.store_size_data("upload_map", time())
-        storage.upload_file(
-            file_name=zipped_filtered_map_filename, bucket=pipeline_params.storage_bucket, key=filtered_map_key
-        )
-        data_size.store_size_data(
-            zipped_filtered_map_filename, os.path.getsize(zipped_filtered_map_filename) / (1024 * 1024)
-        )
+        with stats.timeit("upload_filtered_map"):
+            storage.upload_file(
+                file_name=zipped_filtered_map_filename, bucket=pipeline_params.storage_bucket, key=filtered_map_key
+            )
 
-        timestamps.store_size_data("end", time())
-
-        stat.timer_stop(mapper_id)
-        stat.store_dictio(timestamps.get_stats(), "timestamps", mapper_id)
-        stat.store_dictio(data_size.get_stats(), "data_sizes", mapper_id)
-        return mapper_id, map_index_key, filtered_map_key
+        stats.stop_timer("function")
+        return (mapper_id, map_index_key, filtered_map_key), stats
     finally:
         print("Cleaning up")
         os.chdir(pwd)
@@ -159,7 +152,11 @@ def align_mapper(
 
 
 def index_correction(
-    pipeline_params: PipelineParameters, run_id: str, mapper_id: str, map_index_keys: Tuple[str], storage: Storage
+    pipeline_params: PipelineParameters,
+    run_id: str,
+    mapper_id: str,
+    map_index_keys: Tuple[str],
+    storage: Storage,
 ):
     """
     Lithops callee function
@@ -167,12 +164,12 @@ def index_correction(
     All the set files must have the prefix "map_index_files/".
     Corrected indices will be stored with the prefix "corrected_index/".
     """
-    # stat, timestamps, data_sizes = Stats(), Stats(), Stats()
-    # timestamps.store_size_data("start", time())
+    stats = Stats()
+    stats.set_value("mapper_id", mapper_id)
+    stats.start_timer("function")
 
     mapper_storage_tmp_prefix = partial(get_storage_tmp_prefix, run_id, "index_correction", mapper_id)
 
-    # stat.timer_start(set_name)
     pwd = os.getcwd()
 
     # TODO replace with a proper file name (maybe indicating fastq chunk id)
@@ -184,9 +181,9 @@ def index_correction(
     # Check if output files already exist in storage
     try:
         storage.head_object(bucket=pipeline_params.storage_bucket, key=corrected_index_key)
-        # stat.timer_stop(set_name)
+        stats.stop_timer("function")
         # If they exist, return the keys and skip computing this chunk
-        return mapper_id, corrected_index_key
+        return (mapper_id, corrected_index_key), stats
     except StorageNoSuchKeyError:
         # If the output is missing, proceed
         pass
@@ -195,37 +192,42 @@ def index_correction(
     input_temp_dir = tempfile.mkdtemp()
     output_temp_dir = tempfile.mkdtemp()
     try:
-        # timestamps.store_size_data("download_indexes", time())
         for i, map_index_key in enumerate(map_index_keys):
+            map_index_stat = Stats()
+            map_index_stat.set_value("map_index_key", map_index_key)
+
             local_compressed_map_path = os.path.join(input_temp_dir, f"map_{i}.map.bz2")
 
-            storage.download_file(
-                bucket=pipeline_params.storage_bucket, key=map_index_key, file_name=local_compressed_map_path
-            )
+            with map_index_stat.timeit(f"download_map_index"):
+                storage.download_file(
+                    bucket=pipeline_params.storage_bucket, key=map_index_key, file_name=local_compressed_map_path
+                )
+            map_index_stat.set_value("map_index_size", os.path.getsize(local_compressed_map_path))
 
             with zipfile.ZipFile(local_compressed_map_path, "r", compression=zipfile.ZIP_BZIP2, compresslevel=9) as zf:
-                zf.extractall(input_temp_dir)
-            # data_sizes.store_size_data(
-            #     local_compressed_map_path, os.path.getsize(local_compressed_map_path) / (1024 * 1024)
-            # )
+                with map_index_stat.timeit(f"extract_map_index"):
+                    zf.extractall(input_temp_dir)
+
             # TODO set proper map index file name
             os.rename(
                 os.path.join(input_temp_dir, f"{pipeline_params.sra_accession}_map.index.txt"),
                 os.path.join(input_temp_dir, f"{i}_map.index.txt"),
             )
             os.remove(local_compressed_map_path)
+
+            stats.set_value(map_index_key, map_index_stat.dump_dict())
         print(os.listdir(input_temp_dir))
 
         # TODO chdir required or binary_reducer.sh
         os.chdir(output_temp_dir)
 
         # Execute correction scripts
-        # timestamps.store_size_data("merge_gem", time())
         intermediate_file = f"{mapper_id}.intermediate.txt"
         # TODO binary_reducer.sh could be more efficiently implemented using python and consuming files from storage as a generator
         cmd = f"/function/bin/binary_reducer.sh /function/bin/merge_gem_alignment_metrics.sh 4 {input_temp_dir}/* > {intermediate_file}"
         print(cmd)
-        proc = sp.run(cmd, shell=True, universal_newlines=True, capture_output=True)
+        with stats.timeit("merge_gem_alignment_metrics"):
+            proc = sp.run(cmd, shell=True, universal_newlines=True, capture_output=True)
         print(proc.stdout)
         print(proc.stderr)
         proc.check_returncode()
@@ -233,33 +235,31 @@ def index_correction(
         # timestamps.store_size_data("filter_merged", time())
         cmd = f"/function/bin/filter_merged_index.sh {intermediate_file} {output_file}"
         print(cmd)
-        proc = sp.run(cmd, shell=True, check=True, universal_newlines=True)
+        with stats.timeit("filter_merged_index"):
+            proc = sp.run(cmd, shell=True, check=True, universal_newlines=True)
         print(proc.stdout)
         print(proc.stderr)
         proc.check_returncode()
 
         print(os.listdir())
 
+        stats.set_value("output_file_size", os.path.getsize(output_file))
+
         # Compress output
-        # timestamps.store_size_data("compress_corrected_index", time())
         with zipfile.ZipFile(zipped_output_file, "w", compression=zipfile.ZIP_BZIP2, compresslevel=9) as zf:
-            zf.write(output_file, arcname=output_file)
+            with stats.timeit("compress_output"):
+                zf.write(output_file, arcname=output_file)
+        stats.set_value("zipped_output_file_size", os.path.getsize(zipped_output_file))
 
         # Upload corrected index to storage
-        # timestamps.store_size_data("upload_corrected_index", time())
-        storage.upload_file(
-            bucket=pipeline_params.storage_bucket, key=corrected_index_key, file_name=zipped_output_file
-        )
-        # data_sizes.store_size_data(zipped_output_file, os.path.getsize(zipped_output_file) / (1024 * 1024))
-
-        # timestamps.store_size_data("end", time())
+        with stats.timeit("upload_corrected_index"):
+            storage.upload_file(
+                bucket=pipeline_params.storage_bucket, key=corrected_index_key, file_name=zipped_output_file
+            )
 
         os.chdir(pwd)
-        # stat.timer_stop(set_name)
-        # stat.store_dictio(timestamps.get_stats(), "timestamps", set_name)
-        # stat.store_dictio(data_sizes.get_stats(), "data_sizes", set_name)
-        # return (fastq_chunk_id, corrected_index_key), stat.get_stats()
-        return mapper_id, corrected_index_key
+        stats.stop_timer("function")
+        return (mapper_id, corrected_index_key), stats
     finally:
         os.chdir(pwd)
         force_delete_local_path(input_temp_dir)
@@ -275,25 +275,24 @@ def filtered_index_to_mpileup(
     corrected_index_key: str,
     storage: Storage,
 ):
-    # stat, timestamps, data_sizes = Stats(), Stats(), Stats()
-    # timestamps.store_size_data("start", time())
-    # stat.timer_start(f"{pipeline_params.base_name}_fa{fasta_chunk_id}-fq{fastq_chunk_id}")
+    stats = Stats()
+    stats.set_value("mapper_id", mapper_id)
+    stats.start_timer("function")
+
     temp_dir = tempfile.mkdtemp()
     mapper_storage_tmp_prefix = partial(get_storage_tmp_prefix, run_id, "filtered_index_to_mpileup", mapper_id)
     pwd = os.getcwd()
     # TODO get base name from params
-
     corrected_map_file = f"{pipeline_params.sra_accession}_{mapper_id}_filt_wline_no_corrected.map"
     mpileup_file = corrected_map_file + ".mpileup"
     mpileup_key = mapper_storage_tmp_prefix(mpileup_file)
 
-    # Check if output files already exist in storage
+    # Check if output file already exists in storage
     try:
         storage.head_object(bucket=pipeline_params.storage_bucket, key=mpileup_key)
-        # If they exist, return the keys and skip computing this chunk
-        # stat.timer_stop(f"{pipeline_params.base_name}_fa{fasta_chunk_id}-fq{fastq_chunk_id}")
-        # return mpipleup_key, stat.get_stats()
-        return mapper_id, mpileup_key
+        # If it exist, return the keys and skip computing this chunk
+        stats.stop_timer("function")
+        return (mapper_id, mpileup_key), stats
     except StorageNoSuchKeyError:
         # If the output is missing, proceed
         pass
@@ -302,20 +301,22 @@ def filtered_index_to_mpileup(
         os.chdir(temp_dir)
 
         # Recover fasta chunk
-        # timestamps.store_size_data("download_fasta_chunk", time())
         fasta_chunk_filename = f"chunk_{fasta_chunk['chunk_id']}.fasta"
-        fetch_fasta_chunk(fasta_chunk, fasta_chunk_filename, storage, pipeline_params.fasta_path)
-        # data_sizes.store_size_data(fasta_chunk_filename, os.path.getsize(fasta_chunk_filename) / (1024 * 1024))
+        with stats.timeit("fetch_fasta_chunk"):
+            fetch_fasta_chunk(fasta_chunk, fasta_chunk_filename, storage, pipeline_params.fasta_path)
+        stats.set_value("fasta_chunk_size", os.path.getsize(fasta_chunk_filename))
 
         # Recover filtered map file
-        # timestamps.store_size_data("download_map_file", time())
         bz2_filt_map_filename = pathlib.PurePosixPath(filtered_map_key).name
-        storage.download_file(
-            bucket=pipeline_params.storage_bucket, key=filtered_map_key, file_name=bz2_filt_map_filename
-        )
-        # data_sizes.store_size_data(bz2_filt_map_filename, os.path.getsize(bz2_filt_map_filename) / (1024 * 1024))
+        with stats.timeit("download_filtered_map"):
+            storage.download_file(
+                bucket=pipeline_params.storage_bucket, key=filtered_map_key, file_name=bz2_filt_map_filename
+            )
+        stats.set_value("bz2_filt_map_size", os.path.getsize(bz2_filt_map_filename))
+
         with zipfile.ZipFile(bz2_filt_map_filename, "r", compression=zipfile.ZIP_BZIP2, compresslevel=9) as zf:
-            zf.extractall()
+            with stats.timeit("extract_filtered_map"):
+                zf.extractall()
         os.remove(bz2_filt_map_filename)
 
         # Get corrected map index for this fastq chunk
@@ -323,15 +324,15 @@ def filtered_index_to_mpileup(
             bz2_corrected_index_filename = pathlib.PurePosixPath(corrected_index_key).name
         except:
             raise ValueError(corrected_index_key)
-        # timestamps.store_size_data("download_index", time())
-        storage.download_file(
-            bucket=pipeline_params.storage_bucket, key=corrected_index_key, file_name=bz2_corrected_index_filename
-        )
-        # data_sizes.store_size_data(
-        #     bz2_corrected_index_filename, os.path.getsize(bz2_corrected_index_filename) / (1024 * 1024)
-        # )
+
+        with stats.timeit("download_corrected_index"):
+            storage.download_file(
+                bucket=pipeline_params.storage_bucket, key=corrected_index_key, file_name=bz2_corrected_index_filename
+            )
+        stats.set_value("bz2_corrected_index_size", os.path.getsize(bz2_corrected_index_filename))
         with zipfile.ZipFile(bz2_corrected_index_filename, "r", compression=zipfile.ZIP_BZIP2, compresslevel=9) as zf:
-            zf.extractall()
+            with stats.timeit("extract_corrected_index"):
+                zf.extractall()
         os.remove(bz2_corrected_index_filename)
 
         print(os.listdir(temp_dir))
@@ -349,7 +350,8 @@ def filtered_index_to_mpileup(
             str(pipeline_params.tolerance),
         ]
         print(" ".join(cmd))
-        proc = sp.run(cmd, capture_output=True)  # change to _v3.sh and runtime 20
+        with stats.timeit("map_file_index_correction"):
+            proc = sp.run(cmd, capture_output=True)  # change to _v3.sh and runtime 20
         print(proc.stdout.decode("utf-8"))
         print(proc.stderr.decode("utf-8"))
 
@@ -357,37 +359,36 @@ def filtered_index_to_mpileup(
 
         # Generate mpileup
         # timestamps.store_size_data("gempileup_run", time())
-        cmd = ["/function/bin/gempileup_run.sh", corrected_map_file, fasta_chunk_filename]
+        cmd = [
+            "/function/bin/gempileup_run.sh",
+            corrected_map_file,
+            fasta_chunk_filename,
+        ]
         print(" ".join(cmd))
-        proc = sp.run(cmd, capture_output=True)
+        with stats.timeit("gempileup_run"):
+            proc = sp.run(cmd, capture_output=True)
         print(proc.stdout.decode("utf-8"))
         print(proc.stderr.decode("utf-8"))
 
         # Store output to storage
-        # timestamps.store_size_data("upload_mpileup", time())
-        storage.upload_file(bucket=pipeline_params.storage_bucket, key=mpileup_key, file_name=mpileup_file)
-        # data_sizes.store_size_data(
-        #     f"{corrected_map_file}.mpileup", os.path.getsize(f"{corrected_map_file}.mpileup") / (1024 * 1024)
-        # )
-        #
-        # timestamps.store_size_data("end", time())
-        #
-        # stat.timer_stop(f"{pipeline_params.base_name}_fa{fasta_chunk_id}-fq{fastq_chunk_id}")
-        # stat.store_dictio(
-        #     timestamps.get_stats(), "timestamps", f"{pipeline_params.base_name}_fa{fasta_chunk_id}-fq{fastq_chunk_id}"
-        # )
-        # stat.store_dictio(
-        #     data_sizes.get_stats(), "data_sizes", f"{pipeline_params.base_name}_fa{fasta_chunk_id}-fq{fastq_chunk_id}"
-        # )
-        # return mpipleup_key, stat.get_stats()
-        return mapper_id, mpileup_key
+        stats.set_value("mpileup_size", os.path.getsize(mpileup_file))
+        with stats.timeit("upload_mpileup"):
+            storage.upload_file(bucket=pipeline_params.storage_bucket, key=mpileup_key, file_name=mpileup_file)
+
+        stats.stop_timer("function")
+        return (mapper_id, mpileup_key), stats
     finally:
         os.chdir(pwd)
         force_delete_local_path(temp_dir)
 
 
 def mpileup_conversion(
-    self, mpileup_file: str, fasta_chunk: dict, fastq_chunk: str, exec_param: str, storage: Storage
+    self,
+    mpileup_file: str,
+    fasta_chunk: dict,
+    fastq_chunk: str,
+    exec_param: str,
+    storage: Storage,
 ) -> Tuple[str]:
     """
     Convert resulting data to csv/parquet and txt
@@ -467,6 +468,10 @@ def mpileup_conversion(
     elif self.args.file_format == "parquet":
         df.to_parquet(mpileup_file + ".parquet")
         with open(mpileup_file + ".parquet", "rb") as f:
-            storage.put_object(bucket=self.args.storage_bucket, key=intermediate_key + ".parquet", body=f)
+            storage.put_object(
+                bucket=self.args.storage_bucket,
+                key=intermediate_key + ".parquet",
+                body=f,
+            )
 
     return [intermediate_key + "." + self.args.file_format, intermediate_key + ".txt"]

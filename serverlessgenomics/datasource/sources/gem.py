@@ -18,5 +18,7 @@ def get_gem_chunk_storage_key(pipeline_params: PipelineParameters, fasta_chunk_i
 
 def get_gem_chunk_storage_prefix(pipeline_params: PipelineParameters) -> str:
     return os.path.join(
-        pipeline_params.gem_index_prefix, pipeline_params.fasta_path.key, f"{pipeline_params.fasta_chunks}-chunks"
+        pipeline_params.gem_index_prefix,
+        pipeline_params.fasta_path.key,
+        f"{pipeline_params.fasta_chunks}-chunks",
     )
