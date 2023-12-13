@@ -4,22 +4,22 @@
 
 1. Trypanosome 
 
-- Reference genome (FASTA, 35 MB): [Link](https://tritrypdb.org/tritrypdb/app/downloads/Current_Release/TbruceiTREU927/fasta/data/)
+- Reference genome (FASTA, 35 MB): (Link)[https://tritrypdb.org/tritrypdb/app/downloads/Current_Release/TbruceiTREU927/fasta/data/]
 - Sequence Reads:
-    * SRR6052133* (FASTQGZip, 668 MB): [Link](https://trace.ncbi.nlm.nih.gov/Traces/?view=run_browser&acc=SRR6052133&display=download)
+    * SRR6052133* (FASTQGZip, 668 MB): (Link)[https://trace.ncbi.nlm.nih.gov/Traces/?view=run_browser&acc=SRR6052133&display=download]
 
 2. Human
 
-- Reference genome (FASTA GZip, 905 MB): [Link](http://hgdownload.cse.ucsc.edu/goldenpath/hg19/bigZips/)
+- Reference genome (FASTA GZip, 905 MB): (Link)[http://hgdownload.cse.ucsc.edu/goldenpath/hg19/bigZips/]
 - Sequence Reads:
-    * SRR15068323 (FASTQGZip, 1.2 GB): [Link](https://trace.ncbi.nlm.nih.gov/Traces/?view=run_browser&acc=SRR15068323&display=data-access)
-    * ERR9856489 (FASTQGZip, 12.1 GB): [Link](https://trace.ncbi.nlm.nih.gov/Traces/?view=run_browser&acc=ERR9856489&display=data-access)
+    * SRR15068323 (FASTQGZip, 1.2 GB): (Link)[https://trace.ncbi.nlm.nih.gov/Traces/?view=run_browser&acc=SRR15068323&display=data-access]
+    * ERR9856489 (FASTQGZip, 12.1 GB): (Link)[https://trace.ncbi.nlm.nih.gov/Traces/?view=run_browser&acc=ERR9856489&display=data-access]
 
 3. Bos taurus
 
-- Reference genome (FASTA GZip, 781 MB): [Link](https://www.ensembl.org/Bos_taurus/Info/Index)
+- Reference genome (FASTA GZip, 781 MB): (Link)[https://www.ensembl.org/Bos_taurus/Info/Index]
 - Sequence Reads:
-    * SRR934415* (FASTQGZip, 16.5 GB): [Link](https://trace.ncbi.nlm.nih.gov/Traces/?view=run_browser&acc=SRR934415&display=data-access)
+    * SRR934415* (FASTQGZip, 16.5 GB): (Link)[https://trace.ncbi.nlm.nih.gov/Traces/?view=run_browser&acc=SRR934415&display=data-access]
 
 
 \*The pipeline currently support only single-end sequences. Use only the first sequence for paired-end reads.
@@ -47,3 +47,7 @@ $ lithops runtime build -f lambda.Dockerfile serverless-genomics:1
     - `storage_bucket`: Temporary data S3 bucket name. It must exist.
 
 6. Call `VariantCallingPipeline.preprocess()` for the pre-processing stage, `VariantCallingPipeline.alignment()` to run the alignment phase, `VariantCallingPipeline.reduce()` for the alignment phase or `VariantCallingPipeline.run_pipeline()` for a complete execution.
+
+## Article
+
+You can read more about this pipeline in the published article **Scaling a Variant Calling Genomics Pipeline with FaaS**, presented in WoSC '23: Proceedings of the 9th International Workshop on Serverless Computing, part of MIDDLEWARE 2023 24th ACM/IFIP International Middleware Conference: [https://dl.acm.org/doi/10.1145/3631295.3631403](https://dl.acm.org/doi/10.1145/3631295.3631403) ([Preprint](http://arxiv.org/abs/2312.07090))
