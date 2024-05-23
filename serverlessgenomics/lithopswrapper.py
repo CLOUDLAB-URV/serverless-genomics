@@ -34,7 +34,7 @@ class LithopsInvokerWrapper:
             include_modules,
             exclude_modules,
         )
-        result = self.__fexec.get_result(fs=fut)
+        result = self.__fexec.get_result(fs=[fut])
         return result
 
     def map(
