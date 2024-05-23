@@ -109,42 +109,42 @@ def run_reducer(pipeline_params: PipelineParameters, pipeline_run: PipelineRun, 
     stats.set_value("reduce_function_stats", [s.dump_dict() for s in reduce_function_stats])
 
     # 6 Complete the multipart uploads that the reducers created
-    # with stats.timeit("complete_multipart"):
-    #     complete_multipart(
-    #         multipart_keys, multipart_ids, reducer_output, pipeline_params, lithops.storage.storage_handler.s3_client
-    #     )
+    with stats.timeit("complete_multipart"):
+        complete_multipart(
+            multipart_keys, multipart_ids, reducer_output, pipeline_params, lithops.storage.storage_handler.s3_client
+        )
 
-    # # 7 Create a multipart upload key and ID for the final file
-    # final_sinple_key = f"tmp/{pipeline_params.run_id}/final.alignment"
-    # with stats.timeit("create_multipart"):
-    #     final_id = create_multipart(pipeline_params, final_sinple_key, lithops.storage)
+    # 7 Create a multipart upload key and ID for the final file
+    final_sinple_key = f"serverless-genomics.tmp.varcall-{pipeline_run.run_id}/final.alignment"
+    with stats.timeit("create_multipart"):
+        final_id = create_multipart(pipeline_params, final_sinple_key, lithops.storage)
 
-    # # 8 Merge files created in stage 6 into one single file
-    # n_parts = len(multipart_keys)
-    # part = 1
-    # merge_iterdata = []
-    # while part <= n_parts:
-    #     data = {
-    #         "mpu_id": final_id,
-    #         "mpu_key": final_sinple_key,
-    #         "key": multipart_keys[part - 1],
-    #         "n_part": part,
-    #         "pipeline_params": pipeline_params,
-    #     }
-    #     merge_iterdata.append(data)
-    #     part += 1
+    # 8 Merge files created in stage 6 into one single file
+    n_parts = len(multipart_keys)
+    part = 1
+    merge_iterdata = []
+    while part <= n_parts:
+        data = {
+            "mpu_id": final_id,
+            "mpu_key": final_sinple_key,
+            "key": multipart_keys[part - 1],
+            "n_part": part,
+            "pipeline_params": pipeline_params,
+        }
+        merge_iterdata.append(data)
+        part += 1
 
-    # logger.debug("EXECUTING FINAL MERGE")
-    # with stats.timeit("final_merge"):
-    #     result = lithops.invoker.map(final_merge, merge_iterdata)
-    # final_merge_results, final_merge_stats = zip(*result)
-    # stats.set_value("final_merge_stats", final_merge_stats.dump_dict())
+    logger.debug("EXECUTING FINAL MERGE")
+    with stats.timeit("final_merge"):
+        result = lithops.invoker.map(final_merge, merge_iterdata)
+    final_merge_results, final_merge_stats = zip(*result)
+    stats.set_value("final_merge_stats", [s.dump_dict() for s in final_merge_stats])
 
-    # # 8 Complete the previous multipart upload
-    # with stats.timeit("finish"):
-    #     finish(
-    #         final_sinple_key, final_id, final_merge_results, pipeline_params, lithops.storage.storage_handler.s3_client
-    #     )
+    # 8 Complete the previous multipart upload
+    with stats.timeit("finish"):
+        finish(
+            final_sinple_key, final_id, final_merge_results, pipeline_params, lithops.storage.storage_handler.s3_client
+        )
 
     logger.debug("END OF REDUCE STAGE")
     return stats

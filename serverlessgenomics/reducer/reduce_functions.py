@@ -197,7 +197,7 @@ def final_merge(
     stats.set_value("n_part", n_part)
 
     with stats.timeit("download_sinple_out"):
-        sinple_out = storage.download_file(bucket=pipeline_params.storage_bucket, key=key)
+        sinple_out = storage.get_object(bucket=pipeline_params.storage_bucket, key=key)
 
     stats.set_value("sinple_out_size", len(sinple_out))
 
@@ -318,7 +318,7 @@ def create_multipart_keys(pipeline_params: PipelineParameters, pipeline_run: Pip
     keys = []
     for i in range(pipeline_params.fasta_chunks):
         if (pipeline_params.fasta_chunk_range is None) or (i in pipeline_params.fasta_chunk_range):
-            keys.append(f"tmp/{pipeline_run.run_id}/multipart_uploads/fa{i}.sinple")
+            keys.append(f"serverless-genomics.tmp.varcall-{pipeline_run.run_id}/multipart_uploads/fa{i}.sinple")
     return keys
 
 
